@@ -37,11 +37,9 @@ function indexFromString(s::String,start=0,L=L)
 		error("length doesn't match")
 	end
 	a=start<<(2*(L+1))
-	# cnt=0
 	for i in L : -1 : 1
 		if s[i]=='y'
 			a+=(i<<(2*(L+2)))
-			# cnt+=1
 		end
 		a+=(mapping[s[i]]<<(2*(i-1)))
 	end
@@ -123,9 +121,10 @@ flag_ = zeros(Int32,4^L)
 function setFlag!(flag,ind,L=L)
 	flagshift = L+2
 	below=(ind>>(2*(L+2)))
-	if below != 0
-		return
-	end
+	start=(ind>>(2*(L+1)))&3
+	# if below != 0
+	# 	return
+	# end
 	state=(ind%(4^L))
 	if ind==0 && isodd(L)
 		flag[ind] |= 3 << flagshift
@@ -152,6 +151,9 @@ function setFlag!(flag,ind,L=L)
 				flag[ind] |= 1<<pos
 			end
 			evenxs = ! evenxs
+			if ((pos+1)==below && evenxs) || (below!=0 && pos==L-1)
+				tot = 3-tot
+			end
 		else
 			if(!evenxs)
 				# not allowed
@@ -719,21 +721,22 @@ end
 Zipper stuff
 =#
 
-longFlag_ = zeros(Int32,4^(L+2))
-longZ3Flag_ = zeros(Int64,4^(L+2))
-longEdgeState_ = zeros(Int64,4^(L+2))
+longFlag_ = zeros(Int32,4^(L+4)*L)
+# longZ3Flag_ = zeros(Int64,4^(L+2))
+longEdgeState_ = zeros(Int64,4^(L+4)*L)
 longRevEdgeState_ = zeros(Int64,8^(L+2))
 
-# println("preparing...")
-# for i = 1 : 4^(L+2)
-# 	setFlag!(longFlag_,i,L+2)
-# end
+
+println("preparing...")
+for i = 1 : 4^(L+4)*L
+	setFlag!(longFlag_,i,L+2)
+end
 # for i = 1 : 4^(L+2)
 # 	setZ3Flag!(longZ3Flag_,i,longFlag_,L+2)
 # end
-# for i = 1 : 4^(L+2)
-# 	setEdgeState!(longEdgeState_,longRevEdgeState_,i,longFlag_,L+2)
-# end
+for i = 1 : 4^(L+4)*L
+	setEdgeState!(longEdgeState_,longRevEdgeState_,i,longFlag_,L+2)
+end
 
 
 # for i = 1 : 4^(L+2)
@@ -954,7 +957,7 @@ function Detach!(C,B)
 	for ind = 1 : 4^L
 		C[ind] = 0
 	end
-	for ind = 1 : 4^(L+2)
+	for ind = 1 : 4^(L+4)
 		if mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
@@ -1001,7 +1004,7 @@ attach = LinearMap((C,B)->Attach!(C,B),4^(L+4),4^L,ismutating=true,issymmetric=f
 # t = LinearMap((C,B)->Tfunc!(C,B,L+2,false),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
 # ρ = t * ρ
 
-# detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
+detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+4),ismutating=true,issymmetric=false,isposdef=false)
 # ρ = detach * ρ
 
 # println(Matrix(adjoint(v) * ρ * v))
