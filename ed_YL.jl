@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=6
+const L=4
 # const N=6
 
 #=
@@ -21,7 +21,7 @@ information about start label and below position.
 
 =#
 
-const mapping=Dict('x'=>0, '0'=>1, '+'=>2, '-'=>3, 'y'=>0)
+const mapping=Dict('x'=>0, '0'=>1, '+'=>2, '-'=>3, 'y'=>0, 'z'=>1, 'p'=>2, 'm'=>3)
 const revmapping=Dict(0=>'x', 1=>'0', 2=>'+', 3=>'-')
 const startMapping=Dict('0'=>0, '1'=>1, '2'=>2)
 
@@ -44,7 +44,7 @@ function stateFromString(s::String,L=L)
 	start=startMapping[s[L+2]]
 	a=start<<(2*L)
 	for i in L : -1 : 1
-		if s[i]=='y'
+		if s[i] in ['y','z','p','m']
 			a+=(i<<(2*(L+1)))
 		end
 		a+=(mapping[s[i]]<<(2*(i-1)))
@@ -58,7 +58,17 @@ function stringFromState(state,L=L)
 	s=""
 	for i in 1 : L
 		if i == below
-			s*='y'
+			if (state&3) == 0
+				s*='y'
+			elseif (state&3) == 1
+				s*='z'
+			elseif (state&3) == 2
+				s*='p'
+			elseif (state&3) == 3
+				s*='m'
+			else
+				error("no match")
+			end
 		else
 			s*=revmapping[(state&3)]
 		end
@@ -260,6 +270,11 @@ for i = 1 : 4^(L+1)*L
 	# setFlagYT!(flagYT_,i)
 end
 
+longFlag_ = zeros(Int32,4^(L+3)*(L+2))
+for i = 1 : 4^(L+3)*(L+2)
+	setFlag!(longFlag_,i)
+end
+
 # println("begin")
 # for i = 1 : 4^L
 # 	if i==4^L
@@ -431,8 +446,15 @@ function newInd(state,i,sp)
 	end
 end
 
-# function newInd(ind,i,sp,L=L,start=0,below=0)
-# 	state = ind-1
+# function newInd(state,i,sp,L=L,start=false,below=false)
+# 	if start==false
+# 		start = (state>>(2*L)) & 3
+# 	end
+# 	if below==false
+# 		below = (state>>(2*(L+1)))
+# 	end
+# 	state = state & (4^L-1)
+# 	evenxs = iseven(trailingXs(state,L))
 #
 # 	(a,b)=sp
 #
@@ -444,8 +466,8 @@ end
 # 	state &= ~(3<<(2*(j-1)))
 # 	state |= (b<<(2*(j-1)))
 #
-# 	if (state==1) && (iseven(L))
-#
+# 	if (state==0) && iseven(L) && !evenxs
+# 		state = 1
 # 	end
 #
 # 	# if(state==0)
@@ -456,7 +478,21 @@ end
 # 	# 	end
 # 	# end
 #
-# 	return 1+state+(start<<(2*L))+(below<<(2*(L+1)))
+# 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
+# end
+#
+# for ind = 1 : 4^L
+# 	if mainFlag(flag_, ind) == 0
+# 		state = ind-1
+# 		for i = 1 : 1
+# 			if newInd(state,i,sXX) != newIndYT(state,i,sXX)
+# 				if mainFlag(flag_, newIndYT(state,i,sXX)) == 0
+# 					println("ind,i=", ind, ",", i)
+# 					println( newInd(state,i,sXX), " ", newIndYT(state,i,sXX) )
+# 				end
+# 			end
+# 		end
+# 	end
 # end
 
 function Hfunc!(C,B,diag,flag)
@@ -704,13 +740,22 @@ for i = 1 : 4^(L+1)*L
 	setEdgeState!(edgeState_,revEdgeState_,i,flag_,L)
 end
 
-state = stateFromString("xy0xx-_2",L)
-println()
-# println(bitstring(ind))
-println(stringFromState(state,L))
-println(stringFromEdgeState(edgeState_[state+1],L))
-# println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
-println()
+longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
+longRevEdgeState_ = zeros(Int64,8^(L+2))
+
+println("preparing...")
+for i = 1 : 4^(L+3)*(L+2)
+	setEdgeState!(longEdgeState_,longRevEdgeState_,i,longFlag_,L+2)
+end
+
+# state = stateFromString("xy0xx-_2",L)
+# println()
+# # println(bitstring(ind))
+# println(stringFromState(state,L))
+# println(stringFromEdgeState(edgeState_[state+1],L))
+# # println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
+# println()
+
 #
 # #=
 # F-symbol stuff
@@ -906,15 +951,15 @@ for i = 1 : 4^(L+1)*L
 	setZ3Flag!(z3Flag_,i,flag_,L)
 end
 
-state = stateFromString("xy-xx0_1",L)
-println()
-println(stringFromState(state,L))
-println(stringFromZ3(Z3Flag!(state+1,flag_,L),L))
-println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
-println(mainFlag(flag_,state+1))
+# state = stateFromString("xy-xx0_1",L)
 # println()
-# println(bitstring(flag!(state+1)))
-println()
+# println(stringFromState(state,L))
+# println(stringFromZ3(Z3Flag!(state+1,flag_,L),L))
+# println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
+# println(mainFlag(flag_,state+1))
+# # println()
+# # println(bitstring(flag!(state+1)))
+# println()
 
 # for i = 1 : 4^L
 # 	if mainFlag(flag_,i,L) == 0
@@ -1008,43 +1053,85 @@ println()
 # 	end
 # end
 #
-# function Attach!(C,B)
-# 	for ind = 1 : 4^(L+4)
-# 		C[ind] = 0
-# 	end
-# 	for ind = 1 : 4^L
-# 		if mainFlag(flag_,ind,L) != 0
-# 			continue
-# 		end
-# 		state = stateFromInd(ind) << 2
-# 		if (isodd(trailingXs(state))) # start label is 1
-# 			ni = newInd(state,L+2,sXX,0,0,L+2)
-# 			# if mainFlag(longFlag_,ni,L+2) == 0
-# 				C[ni] += B[ind]
-# 			# end
-# 		else
-# 			ni = newInd(state,L+2,sXX,0,0,L+2)
-# 			# if mainFlag(longFlag_,ni,L+2) == 0
-# 				C[ni] += 1/ζ * B[ind]
-# 			# end
-# 			ni = newInd(state,L+2,s00,0,0,L+2)
-# 			# if mainFlag(longFlag_,ni,L+2) == 0
-# 				C[ni] += ξ * B[ind]
-# 			# end
-# 			ni = newInd(state,L+2,sPM,0,1,L+2)
-# 			# if mainFlag(longFlag_,ni,L+2) == 0
-# 				# println(ni)
-# 				# println(bitstring(ni))
-# 				# println(stringFromIndex(ni,L+2))
-# 				C[ni] += ξ * B[ind]
-# 			# end
-# 			ni = newInd(state,L+2,sMP,0,2,L+2)
-# 			# if mainFlag(longFlag_,ni,L+2) == 0
-# 				C[ni] += ξ * B[ind]
-# 			# end
-# 		end
-# 	end
-# end
+
+function AttachInd(ind,sp,start,L=L+2)
+	if ind==2
+		state = 0
+	else
+		state = (ind-1)
+	end
+
+	state = state << 2
+
+	(a,b)=sp
+
+	i = L
+	state &= ~(3<<(2*(i-1)))
+	state |= (a<<(2*(i-1)))
+
+	j=1
+	state &= ~(3<<(2*(j-1)))
+	state |= (b<<(2*(j-1)))
+
+	if (state==0) && iseven(L) && ind==1
+		state = 1
+	end
+
+	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
+end
+
+state = stateFromString("x++x_0")
+println(stringFromState(state))
+println(stringFromState( AttachInd(state+1,sMP,1)-1, L+2))
+
+
+longFlag_ = zeros(Int32,4^(L+3)*(L+2))
+
+println("preparing...")
+for i = 1 : 4^(L+3)*(L+2)
+	setFlag!(longFlag_,i)
+end
+
+function Attach!(C,B)
+	for ind = 1 : 4^(L+3)*(L+2)
+		C[ind] = 0
+	end
+	for ind = 1 : 4^L
+		if mainFlag(flag_,ind,L) != 0
+			continue
+		end
+		state = stateFromInd(ind)
+		if (isodd(trailingXs(state))) # start label is 1
+			ni = AttachInd(ind,sXX,0)
+			if mainFlag(longFlag_,ni,L+2) != 0
+				error("disallowed state")
+			end
+			C[ni] += B[ind]
+		else
+			ni = AttachInd(ind,sXX,0)
+			if mainFlag(longFlag_,ni,L+2) != 0
+				error("disallowed state")
+			end
+			C[ni] += 1/ζ * B[ind]
+			# ni = newInd(state,L+2,s00,0,0,L+2)
+			ni = AttachInd(ind,s00,0)
+			if mainFlag(longFlag_,ni,L+2) != 0
+				error("disallowed state")
+			end
+			C[ni] += ξ * B[ind]
+			# ni = newInd(state,L+2,sPM,0,1,L+2)
+			ni = AttachInd(ind,sPM,1)
+			if mainFlag(longFlag_,ni,L+2) == 0
+				C[ni] += ξ * B[ind]
+			end
+			# ni = newInd(state,L+2,sMP,0,2,L+2)
+			ni = AttachInd(ind,sMP,2)
+			if mainFlag(longFlag_,ni,L+2) == 0
+				C[ni] += ξ * B[ind]
+			end
+		end
+	end
+end
 #
 # function ZipF!(z3, s1, s2, s3, s4)
 # 	if z3==3
@@ -1206,8 +1293,8 @@ println()
 # 	end
 # end
 #
-# attach = LinearMap((C,B)->Attach!(C,B),4^(L+4),4^L,ismutating=true,issymmetric=false,isposdef=false)
-# # ρ = attach
+attach = LinearMap((C,B)->Attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
+ρ = attach
 # #
 # # for i = 1 : L
 # # 	zip = LinearMap((C,B)->Zip!(C,B,i,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
@@ -1222,7 +1309,7 @@ println()
 #
 # # println(Matrix(adjoint(v) * ρ * v))
 #
-# # println(norm(Matrix(ρ)))
+# println(norm(Matrix(ρ)))
 # # e,v = eigen(Matrix(ρ))
 # # println(e)
 # # println(Matrix(ρ))
@@ -1235,44 +1322,44 @@ println()
 # # str = "000"
 # # ind = indexFromString(str,inL)
 #
-# for ind = 1 : 4^L
-#
-# 	inL = L
-# 	edgeState = edgeState_
-# 	flag = flag_
-#
-# 	if mainFlag(flag,ind,inL)==0
-#
-# 		str = stringFromIndex(ind,inL)
-# 		println()
-# 		println(str)
-# 		# , " = ", stringFromEdgeState(edgeState[ind],inL))
-# 		testV = zeros(4^inL)
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(flag,ind,L)==0)
-#
-# 		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
-# 		# testU = zip * testV
-#
-# 		testU = attach * testV
-#
-# 		outL = L+2
-# 		flag = longFlag_
-# 		# edgeState = edgeState_
-# 		edgeState = longEdgeState_
-# 		for ind = 1 : 4^(outL+2)
-# 			if testU[ind] != 0
-# 				# if mainFlag(flag,ind,outL) == 0
-# 					println(stringFromIndex(ind,outL), " has value ", testU[ind])
-# 					# println(stringFromIndex(ind,outL), " = ", stringFromEdgeState(edgeState[ind],outL), " has value ", testU[ind])
-# 				# else
-# 				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
-# 				# end
-# 			end
-# 		end
-#
-# 	end
-# end
+for ind = 1 : 4^L
+
+	inL = L
+	edgeState = edgeState_
+	flag = flag_
+
+	if mainFlag(flag,ind,inL)==0
+
+		str = stringFromState(ind-1,inL)
+		println()
+		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
+		testV = zeros(4^inL)
+		testV[ind] = 1
+		println("mainFlag: ", mainFlag(flag,ind,L)==0)
+
+		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
+		# testU = zip * testV
+
+		testU = attach * testV
+
+		outL = L+2
+		flag = longFlag_
+		# edgeState = edgeState_
+		edgeState = longEdgeState_
+		for i = 1 : 4^(L+3)*(L+2)
+			if testU[i] != 0
+				if mainFlag(flag,i,outL) == 0
+					# println(edgeState[ind])
+					# println(stringFromState(i-1,outL), " has value ", testU[i])
+					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
+				# # else
+				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
+				end
+			end
+		end
+
+	end
+end
 #
 #
 #
