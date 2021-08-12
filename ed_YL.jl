@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=3
+const L=6
 # const N=6
 
 #=
@@ -136,7 +136,67 @@ end
 # 	flag[ind] |= tot << flagshift
 # end
 
-flag_ = zeros(Int32,4^L)
+flag_ = zeros(Int32,4^(L+1)*L)
+
+function flag!(ind,L=L)
+	f = 0
+	flagshift=L+2
+	state=ind-1
+	below=(state>>(2*(L+1)))
+	start=(state>>(2*L))&3
+	state=state&(4^L-1)
+	if (start==3) || (below>=L)
+		f |= 3 << flagshift
+		return f
+	end
+	if state==0 && isodd(L)
+		f |= 3 << flagshift
+		return f
+	end
+	evenxs=iseven(trailingXs(state,L))
+	tot=start
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	for pos = 0 : L-1
+		println(tot)
+		a=(state >> (2*pos)) & 3
+		if a==0
+			if(evenxs)
+				f |= 1<<pos
+			end
+			evenxs = ! evenxs
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+				tot = 3-tot
+			end
+		else
+			if(!evenxs)
+				# not allowed
+				f |= 3 << flagshift
+				return f
+			end
+			if a==2
+				tot+=1
+			elseif a==3
+				tot+=2
+			end
+			tot%=3
+		end
+	end
+	tot=tot-start
+	if tot<0
+		tot+=3
+	end
+	# tot%=3
+	println(tot)
+	if state==0 && isodd(L)
+		f |= 3 << flagshift
+		return f
+	end
+	f |= tot << flagshift
+	return (f >> flagshift) & 3
+end
 
 function setFlag!(flag,ind,L=L)
 	flagshift=L+2
@@ -144,24 +204,29 @@ function setFlag!(flag,ind,L=L)
 	below=(state>>(2*(L+1)))
 	start=(state>>(2*L))&3
 	state=state&(4^L-1)
+	if (start==3) || (below>=L)
+		flag[ind] |= 3 << flagshift
+		return
+	end
 	if state==0 && isodd(L)
 		flag[ind] |= 3 << flagshift
 		return
 	end
 	evenxs=iseven(trailingXs(state,L))
-	tot=0
+	tot=start
 	if(state==1 && iseven(L))
 		state=0
 		evenxs=false
 	end
 	for pos = 0 : L-1
+		tot%=3
 		a=(state >> (2*pos)) & 3
 		if a==0
 			if(evenxs)
 				flag[ind] |= 1<<pos
 			end
 			evenxs = ! evenxs
-			if ((pos+1)==below && evenxs) || (below!=0 && pos==L-1)
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		else
@@ -175,18 +240,22 @@ function setFlag!(flag,ind,L=L)
 			elseif a==3
 				tot+=2
 			end
+			tot%=3
 		end
 	end
-	tot%=3
+	tot=tot-start # compare with start
+	if tot<0
+		tot+=3
+	end
 	if state==0 && isodd(L)
-		flag[ind] |= 3<<flagshift
+		flag[ind] |= 3 << flagshift
 		return
 	end
 	flag[ind] |= tot << flagshift
 end
 
 println("preparing...")
-for i = 1 : 4^L
+for i = 1 : 4^(L+1)*L
 	setFlag!(flag_,i)
 	# setFlagYT!(flagYT_,i)
 end
@@ -559,7 +628,7 @@ function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if (pos+1)==below && evenxs
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -598,7 +667,7 @@ function EdgeState!(ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if (pos+1)==below && evenxs
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -627,15 +696,15 @@ function stringFromEdgeState(edgeState,L)
 end
 
 
-edgeState_ = zeros(Int64,4^(L+2))
+edgeState_ = zeros(Int64,4^(L+1)*L)
 revEdgeState_ = zeros(Int64,8^L)
 
 println("preparing...")
-for i = 1 : 4^(L+2)
+for i = 1 : 4^(L+1)*L
 	setEdgeState!(edgeState_,revEdgeState_,i,flag_,L)
 end
 
-state = stateFromString("xy0_2",L)
+state = stateFromString("xy0xx-_2",L)
 println()
 # println(bitstring(ind))
 println(stringFromState(state,L))
@@ -731,72 +800,134 @@ println()
 # end
 #
 #
-# #=
-# Z3 stuff
-# =#
-#
-# const revZ3Mapping=Dict(0=>'0', 1=>'+', 2=>'-', 3=>'1')
-#
-# z3Flag_ = zeros(Int64,4^L)
-#
-# function setZ3Flag!(z3Flag,ind,flag,L)
-# 	if mainFlag(flag,ind,L) != 0
-# 		return
-# 	end
-# 	state=ind
-# 	if(ind==4^L)
-# 		state=0
-# 	end
-# 	evenxs=iseven(trailingXs(state,L))
-# 	tot=0
-# 	if(ind==1 && iseven(L))
-# 		state=0
-# 		evenxs=false
-# 	end
-# 	for pos = 0 : L-1
-# 		tot%=3
-# 		if evenxs
-# 			z3Flag[ind] |= (tot << (2*pos))
-# 		else
-# 			# edge to the left is invertible
-# 			z3Flag[ind] |= (3 << (2*pos))
-# 		end
-# 		a=(state >> (2*pos)) & 3
-# 		if a==0
-# 			evenxs = ! evenxs
-# 		elseif a==2
-# 			tot+=1
-# 		elseif a==3
-# 			tot+=2
-# 		end
-# 	end
-# end
-#
-# function stringFromZ3(z3Labels,L)
-# 	s=""
-# 	for i in 1 : L
-# 		s*=revZ3Mapping[(z3Labels&3)]
-# 		z3Labels>>=2
-# 	end
-# 	return s
-# end
-#
-# println("preparing...")
+#=
+Z3 stuff
+=#
+
+const revZ3Mapping=Dict(0=>'0', 1=>'+', 2=>'-', 3=>'z')
+
+function Z3Flag!(ind,flag,L)
+	z3 = 0
+	if mainFlag(flag,ind,L) != 0
+		return z3
+	end
+	below = ((ind-1)>>(2*(L+1)))
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	# if(ind==4^L)
+	# 	state=0
+	# end
+	evenxs = iseven(trailingXs(state,L))
+	tot = start
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	for pos = 0 : L-1
+		tot%=3
+		# if evenxs
+			z3 |= (tot << (2*pos))
+		# else
+			# edge to the left is invertible
+			# z3 |= (3 << (2*pos))
+		# end
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+				tot = 3-tot
+			end
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+	end
+	return z3
+end
+
+function setZ3Flag!(z3Flag,ind,flag,L)
+	if mainFlag(flag,ind,L) != 0
+		return
+	end
+	below = ((ind-1)>>(2*(L+1)))
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	# if(ind==4^L)
+	# 	state=0
+	# end
+	evenxs = iseven(trailingXs(state,L))
+	tot = start
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	for pos = 0 : L-1
+		tot%=3
+		if evenxs
+			z3Flag[ind] |= (tot << (2*pos))
+		else
+			# edge to the left is invertible
+			z3Flag[ind] |= (3 << (2*pos))
+		end
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+				tot = 3-tot
+			end
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+	end
+end
+
+function stringFromZ3(z3Labels,L)
+	s=""
+	for i in 1 : L
+		s*=revZ3Mapping[(z3Labels&3)]
+		z3Labels>>=2
+	end
+	return s
+end
+
+flag_ = zeros(Int32,4^(L+1)*L)
+z3Flag_ = zeros(Int64,4^(L+1)*L)
+
+println("preparing...")
+for i = 1 : 4^(L+1)*L
+	setFlag!(flag_,i)
+end
+
+println("preparing...")
+for i = 1 : 4^(L+1)*L
+	setZ3Flag!(z3Flag_,i,flag_,L)
+end
+
+state = stateFromString("xy-xx0_1",L)
+println()
+println(stringFromState(state,L))
+println(stringFromZ3(Z3Flag!(state+1,flag_,L),L))
+println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
+println(mainFlag(flag_,state+1))
+# println()
+# println(bitstring(flag!(state+1)))
+println()
+
 # for i = 1 : 4^L
-# 	setZ3Flag!(z3Flag_,i,flag_,L)
+# 	if mainFlag(flag_,i,L) == 0
+# 		println("state: ", stringFromIndex(i,L))
+# 		println("edge:  ", stringFromEdgeState(edgeState_[i],L))
+# 		# println("z3:    ", stringFromZ3(z3Flag_[i],L))
+# 		# println("trail: ", isodd(trailingXs(stateFromInd(i,L),L)))
+# 		println("state: ", stringFromIndex(newInd(stateFromInd(i,L) << 2,L+2,sXX,L+2),L+2))
+# 		# println("edge: ", stringFromEdgeState(newInd(stateFromInd(i,L),L+2,sXX,L+2),L+2))
+# 		println()
+# 	end
 # end
-#
-# # for i = 1 : 4^L
-# # 	if mainFlag(flag_,i,L) == 0
-# # 		println("state: ", stringFromIndex(i,L))
-# # 		println("edge:  ", stringFromEdgeState(edgeState_[i],L))
-# # 		# println("z3:    ", stringFromZ3(z3Flag_[i],L))
-# # 		# println("trail: ", isodd(trailingXs(stateFromInd(i,L),L)))
-# # 		println("state: ", stringFromIndex(newInd(stateFromInd(i,L) << 2,L+2,sXX,L+2),L+2))
-# # 		# println("edge: ", stringFromEdgeState(newInd(stateFromInd(i,L),L+2,sXX,L+2),L+2))
-# # 		println()
-# # 	end
-# # end
+
 #
 #
 # #=
