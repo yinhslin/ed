@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=3
+const L=6
 # const N=6
 
 #=
@@ -77,7 +77,7 @@ function trailingXs(state,L=L)
 	return L-i
 end
 
-# function trailingXsAlt(ind)
+# function trailingXsYT(ind)
 # 	i=0
 # 	while ind!=0
 # 		ind>>=2
@@ -87,52 +87,52 @@ end
 # end
 
 
-flagYT_ = zeros(Int32,4^L)
-
-function setFlagYT!(flag,ind)
-	flagshift=L+2
-	state=ind
-	if(ind==4^L)
-		state=0
-		if(isodd(L))
-			# not allowed
-			flag[ind] |= 3 << flagshift
-			return
-		end
-	end
-	evenxs=iseven(trailingXs(state))
-	tot=0
-	if(ind==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		a=(state >> (2*pos)) & 3
-		if a==0
-			if(evenxs)
-				flag[ind] |= 1<<pos
-			end
-			evenxs = ! evenxs
-		else
-			if(!evenxs)
-				# not allowed
-				flag[ind] |= 3 << flagshift
-				return
-			end
-			if a==2
-				tot+=1
-			elseif a==3
-				tot+=2
-			end
-		end
-	end
-	tot%=3
-	if ind==0 && isodd(L)
-		flag[ind] |= 3<<flagshift
-		return
-	end
-	flag[ind] |= tot << flagshift
-end
+# flagYT_ = zeros(Int32,4^L)
+#
+# function setFlagYT!(flag,ind)
+# 	flagshift=L+2
+# 	state=ind
+# 	if(ind==4^L)
+# 		state=0
+# 		if(isodd(L))
+# 			# not allowed
+# 			flag[ind] |= 3 << flagshift
+# 			return
+# 		end
+# 	end
+# 	evenxs=iseven(trailingXs(state))
+# 	tot=0
+# 	if(ind==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			if(evenxs)
+# 				flag[ind] |= 1<<pos
+# 			end
+# 			evenxs = ! evenxs
+# 		else
+# 			if(!evenxs)
+# 				# not allowed
+# 				flag[ind] |= 3 << flagshift
+# 				return
+# 			end
+# 			if a==2
+# 				tot+=1
+# 			elseif a==3
+# 				tot+=2
+# 			end
+# 		end
+# 	end
+# 	tot%=3
+# 	if ind==0 && isodd(L)
+# 		flag[ind] |= 3<<flagshift
+# 		return
+# 	end
+# 	flag[ind] |= tot << flagshift
+# end
 
 flag_ = zeros(Int32,4^L)
 
@@ -186,21 +186,21 @@ end
 println("preparing...")
 for i = 1 : 4^L
 	setFlag!(flag_,i)
-	setFlagYT!(flagYT_,i)
+	# setFlagYT!(flagYT_,i)
 end
 
-println("begin")
-for i = 1 : 4^L
-	if i==4^L
-		j = 1
-	else
-		j = i+1
-	end
-	if (flag_[j] != flagYT_[i])
-		println(i)
-	end
-end
-println("end")
+# println("begin")
+# for i = 1 : 4^L
+# 	if i==4^L
+# 		j = 1
+# 	else
+# 		j = i+1
+# 	end
+# 	if (flag_[j] != flagYT_[i])
+# 		println(i)
+# 	end
+# end
+# println("end")
 
 
 diag_ = zeros(Float64,4^L)
@@ -244,23 +244,29 @@ function stateFromInd(ind,L=L)
 	return state
 end
 
-function stateFromIndYT(ind)
-	state=ind-1
-	if ind==4^L
-		state=0
-	end
-	if ind==1 && iseven(L)
-		state=0
-	end
-	return state
-end
-
-for ind = 1 : 4^L
-	if (stateFromInd(ind) != stateFromIndYT(ind))
-		println(ind)
-	end
-end
-
+# function stateFromIndYT(ind)
+# 	state=ind
+# 	if ind==4^L
+# 		state=0
+# 	end
+# 	if ind==1 && iseven(L)
+# 		state=0
+# 	end
+# 	return state
+# end
+#
+# println("stateFromInd")
+# for ind = 1 : 4^L
+# 	if ind==4^L
+# 		j=1
+# 	else
+# 		j=ind+1
+# 	end
+# 	if (stateFromInd(j) != stateFromIndYT(ind))
+# 		println(ind)
+# 	end
+# end
+# println("stateFromInd")
 
 # Good
 function mainFlag(flag,ind,L=L)::Int32
@@ -332,37 +338,55 @@ function computeDiag!(diag,flag,ind)
 	end
 end
 
-function newInd(state,i,sp,below=0,start=0,L=L)
+
+function newInd(state,i,sp)
 	(a,b)=sp
 
 	state &= ~(3<<(2*(i-1)))
 	state |= (a<<(2*(i-1)))
 
-	j=nextSite(i,L)
+	j=nextSite(i)
 
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
 
-	if(state==0)
-		if(isodd(i))
-			state = 4^L
-		else
-			state = 1
-		end
+	if(state!=0)
+		return 1+state
 	end
-
-	return 1+state+(start<<(2*(L+1)))+(below<<(2*(L+2)))
+	if(isodd(i))
+		return 1
+	else
+		return 2
+	end
 end
 
-function pettyPrint(v)
-	for x in v
-		if(abs(x)<.0001)
-			x=0
-		end
-		print("$x,")
-	end
-	println("")
-end
+# function newInd(ind,i,sp,L=L,start=0,below=0)
+# 	state = ind-1
+#
+# 	(a,b)=sp
+#
+# 	state &= ~(3<<(2*(i-1)))
+# 	state |= (a<<(2*(i-1)))
+#
+# 	j=nextSite(i,L)
+#
+# 	state &= ~(3<<(2*(j-1)))
+# 	state |= (b<<(2*(j-1)))
+#
+# 	if (state==1) && (iseven(L))
+#
+# 	end
+#
+# 	# if(state==0)
+# 	# 	if(isodd(i))
+# 	# 		# state = 4^L
+# 	# 	else
+# 	# 		state = 1
+# 	# 	end
+# 	# end
+#
+# 	return 1+state+(start<<(2*L))+(below<<(2*(L+1)))
+# end
 
 function Hfunc!(C,B,diag,flag)
 	for ind = 1 : 4^L
@@ -426,72 +450,88 @@ H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,
 println(sort(e))
 
 
-#
-# # Translation (lattice shift)
-# function TInd!(ind,L,right)
-# 	if (ind==1 && iseven(L))
-# 		return 4^L
-# 	end
-# 	if (ind==4^L && iseven(L))
-# 		return 1
-# 	end
-# 	if right
-# 		return (ind>>2)+((ind&3)<<(2*(L-1)))
-# 	else
-# 		return (ind<<2)&(4^L-1)+(ind>>(2*(L-1)))
-# 	end
-# end
-#
-# function Tfunc!(C,B,L=L,right=true)
-# 	for ind = 1 : 4^L
-# 		C[ind] = B[TInd!(ind,L,right)]
-# 	end
-# end
-#
-# T=LinearMap((C,B)->Tfunc!(C,B),4^L,ismutating=true,issymmetric=false,isposdef=false)
-#
-#
-# # Print spectrum in Mathematica array to reuse Mathematica code for making plots
-# function MathematicaVector(V)
-# 	s="{"
-# 	for i = 1:(size(V,1)-1)
-# 		s*=string(V[i])
-# 		s*=", "
-# 	end
-# 	s*=string(V[size(V,1)])
-# 	s*="}"
-# 	return s
-# end
-#
-# function MathematicaMatrix(M)
-# 	s="{\n"
-# 	for i = 1:(size(M,1)-1)
-# 		s*=MathematicaVector(M[i])
-# 		s*=",\n"
-# 	end
-# 	s*=MathematicaVector(M[size(M,1)])
-# 	s*="\n}\n"
-# 	return s
-# end
-#
-# #=
-# Simultaneously diagonalize Hamiltonian and translation
-# Output sorted pairs of energy and momentum
-# =#
-# # println()
-# # smallH = Matrix(diagm(e))
-# # smallT = Matrix(adjoint(v)*T*v)
-# # smalle,smallv = eigen(smallH+smallT)
-# # Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# # Ts = diag(adjoint(smallv)*smallT*smallv)
-# # Ps = real(map(log,Ts)/(2*π*im))*L
-# # HPs = hcat(Hs,Ps)
-# # HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
-# # s=""
-# # s*=string(HPs[1][1])
-# # print(MathematicaMatrix(HPs))
-#
-#
+# Translation (lattice shift)
+function TInd!(ind,L,right)
+	if (ind==2 && iseven(L))
+		return 1
+	end
+	if (ind==1 && iseven(L))
+		return 2
+	end
+	state = (ind-1) & (4^L-1)
+	if right
+		return 1+(state>>2)+((state&3)<<(2*(L-1)))
+	else
+		return 1+(state<<2)&(4^L-1)+(state>>(2*(L-1)))
+	end
+end
+
+# Translation (lattice shift)
+function TIndYL!(ind,L,right)
+	state = ind-1
+	if (ind==1 && iseven(L))
+		return 4^L
+	end
+	if (ind==4^L && iseven(L))
+		return 1
+	end
+	if right
+		return (ind>>2)+((ind&3)<<(2*(L-1)))
+	else
+		return (ind<<2)&(4^L-1)+(ind>>(2*(L-1)))
+	end
+end
+
+function Tfunc!(C,B,L=L,right=true)
+	for ind = 1 : 4^L
+		C[ind] = B[TInd!(ind,L,right)]
+	end
+end
+
+T=LinearMap((C,B)->Tfunc!(C,B),4^L,ismutating=true,issymmetric=false,isposdef=false)
+
+
+# Print spectrum in Mathematica array to reuse Mathematica code for making plots
+function MathematicaVector(V)
+	s="{"
+	for i = 1:(size(V,1)-1)
+		s*=string(V[i])
+		s*=", "
+	end
+	s*=string(V[size(V,1)])
+	s*="}"
+	return s
+end
+
+function MathematicaMatrix(M)
+	s="{\n"
+	for i = 1:(size(M,1)-1)
+		s*=MathematicaVector(M[i])
+		s*=",\n"
+	end
+	s*=MathematicaVector(M[size(M,1)])
+	s*="\n}\n"
+	return s
+end
+
+#=
+Simultaneously diagonalize Hamiltonian and translation
+Output sorted pairs of energy and momentum
+=#
+println()
+smallH = Matrix(diagm(e))
+smallT = Matrix(adjoint(v)*T*v)
+smalle,smallv = eigen(smallH+smallT)
+Hs = real(diag(adjoint(smallv)*smallH*smallv))
+Ts = diag(adjoint(smallv)*smallT*smallv)
+Ps = real(map(log,Ts)/(2*π*im))*L
+HPs = hcat(Hs,Ps)
+HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
+s=""
+s*=string(HPs[1][1])
+print(MathematicaMatrix(HPs))
+
+
 # #=
 # Edge state stuff
 # =#
