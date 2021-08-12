@@ -15,10 +15,14 @@ as the array index.
 "state" is what you obtain by encoding edge labels using the following mapping,
 and takes the values 0 ...  4^L-1.
 
+I have decided to change to ind = state + 1
+
 =#
 
 const mapping=Dict('x'=>0, '0'=>1, '+'=>2, '-'=>3, 'y'=>0)
 const revmapping=Dict(0=>'x', 1=>'0', 2=>'+', 3=>'-')
+
+const startMapping=Dict('0'=>0, '1'=>1, '2'=>2)
 
 #=
 
@@ -32,80 +36,49 @@ My convention is to use
 
 =#
 
-function indexFromString(s::String,start=0,L=L)
-	if length(s)!=L
+function stateFromString(s::String,L=L)
+	if length(s)!=L+2
 		error("length doesn't match")
 	end
-	a=start<<(2*(L+1))
+	start=startMapping[s[L+2]]
+	a=start<<(2*L)
 	for i in L : -1 : 1
 		if s[i]=='y'
-			a+=(i<<(2*(L+2)))
+			a+=(i<<(2*(L+1)))
 		end
 		a+=(mapping[s[i]]<<(2*(i-1)))
-	end
-	if (a%(4^L))==0
-		a+=4^L
 	end
 	return a
 end
 
-function stringFromIndex(ind,L=L)
-	below = (ind>>(2*(L+2)))
-	start = (ind>>(2*(L+1))) & 3
-	# if (ind>>(2*L))==0
-	# 	below = 0
-	# else
-	# 	below = [ind>>(2*L+2)&(2^N-1))]
-	# end
-	ind=ind%(4^L)
-	# if ind==4^L
-	# 	ind=0
-	# end
-	s=string(start)
+function stringFromState(state,L=L)
+	below = (state>>(2*(L+1)))
+	start = (state>>(2*L)) & 3
+	# state = state & (4^L-1)
+	# s=string(start)
+	s=""
 	for i in 1 : L
 		if i == below
 			s*='y'
 		else
-			s*=revmapping[(ind&3)]
+			s*=revmapping[(state&3)]
 		end
-		ind>>=2
+		state>>=2
 	end
+	s*='_'
+	s*=string(start)
 	return s
 end
 
-
-function trailingXs(ind,L=L)
-	ind=ind%(4^L)
+function trailingXs(state,L=L)
+	state = state & (4^L-1)
 	i=0
-	while ind!=0
-		ind>>=2
+	while state!=0
+		state>>=2
 		i+=1
 	end
-	L-i
+	return L-i
 end
-
-# const flagshift = L+2
-
-
-function bitdump(i,L=L)
-	flagshift=L+2
-	s=""
-	for pos = 0 : L-1
-		if (i & (1<<pos))!=0
-			s*="1"
-		else
-			s*="0"
-		end
-	end
-	println(s)
-	a = (i >> flagshift) & 3
-	if(a==3)
-		println("not allowed")
-	else
-		println("Z3 charge: $a")
-	end
-end
-
 
 #=
 
@@ -119,14 +92,15 @@ where 0,1,2 are twisted Z3 charge and 3 means it is a forbidden state
 flag_ = zeros(Int32,4^L)
 
 function setFlag!(flag,ind,L=L)
-	flagshift = L+2
-	below=(ind>>(2*(L+2)))
-	start=(ind>>(2*(L+1)))&3
+	flagshift=L+2
+	state=ind-1
+	below=(state>>(2*(L+1)))
+	start=(state>>(2*L))&3
 	# if below != 0
 	# 	return
 	# end
-	state=(ind%(4^L))
-	if ind==0 && isodd(L)
+	state=state&(4^L-1)
+	if state==0 && isodd(L)
 		flag[ind] |= 3 << flagshift
 		return
 	end
@@ -140,7 +114,7 @@ function setFlag!(flag,ind,L=L)
 	# end
 	evenxs=iseven(trailingXs(state,L))
 	tot=0
-	if(ind==1 && iseven(L))
+	if(state==1 && iseven(L))
 		state=0
 		evenxs=false
 	end
@@ -168,12 +142,15 @@ function setFlag!(flag,ind,L=L)
 		end
 	end
 	tot%=3
-	if ind==0 && isodd(L)
+	if state==0 && isodd(L)
 		flag[ind] |= 3<<flagshift
 		return
 	end
 	flag[ind] |= tot << flagshift
 end
+
+println()
+
 
 diag_ = zeros(Float64,4^L)
 
