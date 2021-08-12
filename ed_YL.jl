@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=6
+const L=3
 # const N=6
 
 #=
@@ -15,7 +15,9 @@ as the array index.
 "state" is what you obtain by encoding edge labels using the following mapping,
 and takes the values 0 ...  4^L-1.
 
-I have decided to change to ind = state + 1
+I have decided to change to ind = state + 1.
+"state" now has two meanings, either that defined above, or with additional
+information about start label and below position.
 
 =#
 
@@ -234,7 +236,7 @@ const sMM=(3,3)
 
 function stateFromInd(ind,L=L)
 	# state=(ind%(4^L))
-	state=ind-1
+	state=(ind-1)&(4^L-1)
 	# if ind==4^L
 	# 	state=0
 	# end
@@ -466,21 +468,21 @@ function TInd!(ind,L,right)
 	end
 end
 
-# Translation (lattice shift)
-function TIndYL!(ind,L,right)
-	state = ind-1
-	if (ind==1 && iseven(L))
-		return 4^L
-	end
-	if (ind==4^L && iseven(L))
-		return 1
-	end
-	if right
-		return (ind>>2)+((ind&3)<<(2*(L-1)))
-	else
-		return (ind<<2)&(4^L-1)+(ind>>(2*(L-1)))
-	end
-end
+# # Translation (lattice shift)
+# function TIndYL!(ind,L,right)
+# 	state = ind-1
+# 	if (ind==1 && iseven(L))
+# 		return 4^L
+# 	end
+# 	if (ind==4^L && iseven(L))
+# 		return 1
+# 	end
+# 	if right
+# 		return (ind>>2)+((ind&3)<<(2*(L-1)))
+# 	else
+# 		return (ind<<2)&(4^L-1)+(ind>>(2*(L-1)))
+# 	end
+# end
 
 function Tfunc!(C,B,L=L,right=true)
 	for ind = 1 : 4^L
@@ -532,125 +534,114 @@ s*=string(HPs[1][1])
 print(MathematicaMatrix(HPs))
 
 
-# #=
-# Edge state stuff
-# =#
-# const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
-#
-# function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
-# 	below = (ind>>(2*(L+2)))
-# 	start = (ind>>(2*(L+1))) & 3
-# 	# println("start: ",start)
-# 	# ind = ind%(4^L)
-# 	state = ind%(4^L)
-# 	# if ind==0
-# 	# 	ind=4^L
-# 	# end
-# 	# if mainFlag(flag,ind,L) != 0
-# 	# 	return
-# 	# end
-# 	# state=ind
-# 	# if(ind==4^L)
-# 	# 	state=0
-# 	# end
-# 	evenxs=iseven(trailingXs(state,L))
-# 	if(ind==1 && iseven(L))
-# 		state=0
-# 		evenxs=false
-# 	end
-# 	tot=start
-# 	if evenxs
-# 		edgeState[ind] |= 4+start
-# 	else
-# 		edgeState[ind] |= 1+start
-# 	end
-# 	for pos = 0 : L-2
-# 		a=(state >> (2*pos)) & 3
-# 		if a==0
-# 			evenxs = ! evenxs
-# 			if (pos+1)==below && evenxs
-# 				tot = 3-tot
-# 			end
-# 		elseif a==2
-# 			tot+=1
-# 		elseif a==3
-# 			tot+=2
-# 		end
-# 		tot%=3
-# 		if evenxs
-# 			edgeState[ind] |= ((4+tot) << (3*(pos+1)))
-# 		else
-# 			edgeState[ind] |= ((1+tot) << (3*(pos+1)))
-# 		end
-# 	end
-# 	revEdgeState[edgeState[ind]] = ind
-# end
-#
-#
-# function EdgeState!(ind,flag,L)
-# 	es = 0
-# 	below = (ind>>(2*(L+2)))
-# 	start = (ind>>(2*(L+1))) & 3
-# 	state = ind%(4^L)
-# 	evenxs=iseven(trailingXs(state,L))
-# 	if(ind==1 && iseven(L))
-# 		state=0
-# 		evenxs=false
-# 	end
-# 	tot=start
-# 	if evenxs
-# 		es |= 4+start
-# 	else
-# 		es |= 1+start
-# 	end
-# 	for pos = 0 : L-2
-# 		a=(state >> (2*pos)) & 3
-# 		if a==0
-# 			evenxs = ! evenxs
-# 			if (pos+1)==below && evenxs
-# 				tot = 3-tot
-# 			end
-# 		elseif a==2
-# 			tot+=1
-# 		elseif a==3
-# 			tot+=2
-# 		end
-# 		tot%=3
-# 		if evenxs
-# 			es |= ((4+tot) << (3*(pos+1)))
-# 		else
-# 			es |= ((1+tot) << (3*(pos+1)))
-# 		end
-# 	end
-# 	return es
-# end
-#
-#
-# function stringFromEdgeState(edgeState,L)
-# 	s=""
-# 	for i in 1 : L
-# 		s*=edgeRevmapping[(edgeState&7)]
-# 		edgeState>>=3
-# 	end
-# 	return s
-# end
-#
-#
-# edgeState_ = zeros(Int64,4^(L+2)*L)
-# revEdgeState_ = zeros(Int64,8^L)
-#
-# println("preparing...")
-# for i = 1 : 4^(L+2)*L
-# 	setEdgeState!(edgeState_,revEdgeState_,i,flag_,L)
-# end
-#
-# ind = indexFromString("y0x",2,L)
-# println()
-# # println(bitstring(ind))
-# println(stringFromIndex(ind,L))
-# println(stringFromEdgeState(edgeState_[ind],L))
-# println(stringFromEdgeState(EdgeState!(ind,flag_,L),L))
-# println()
+#=
+Edge state stuff
+=#
+
+const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
+
+function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
+	below = ((ind-1)>>(2*(L+1)))
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	evenxs=iseven(trailingXs(state,L))
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	tot=start
+	if evenxs
+		edgeState[ind] |= 4+start
+	else
+		edgeState[ind] |= 1+start
+	end
+	for pos = 0 : L-2
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+			if (pos+1)==below && evenxs
+				tot = 3-tot
+			end
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+		tot%=3
+		if evenxs
+			edgeState[ind] |= ((4+tot) << (3*(pos+1)))
+		else
+			edgeState[ind] |= ((1+tot) << (3*(pos+1)))
+		end
+	end
+	revEdgeState[edgeState[ind]] = ind
+end
+
+
+function EdgeState!(ind,flag,L)
+	es = 0
+	below = ((ind-1)>>(2*(L+1)))
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	evenxs=iseven(trailingXs(state,L))
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	tot=start
+	if evenxs
+		es |= 4+start
+	else
+		es |= 1+start
+	end
+	for pos = 0 : L-2
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+			if (pos+1)==below && evenxs
+				tot = 3-tot
+			end
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+		tot%=3
+		if evenxs
+			es |= ((4+tot) << (3*(pos+1)))
+		else
+			es |= ((1+tot) << (3*(pos+1)))
+		end
+	end
+	return es
+end
+
+
+function stringFromEdgeState(edgeState,L)
+	s=""
+	for i in 1 : L
+		s*=edgeRevmapping[(edgeState&7)]
+		edgeState>>=3
+	end
+	return s
+end
+
+
+edgeState_ = zeros(Int64,4^(L+2))
+revEdgeState_ = zeros(Int64,8^L)
+
+println("preparing...")
+for i = 1 : 4^(L+2)
+	setEdgeState!(edgeState_,revEdgeState_,i,flag_,L)
+end
+
+state = stateFromString("xy0_2",L)
+println()
+# println(bitstring(ind))
+println(stringFromState(state,L))
+println(stringFromEdgeState(edgeState_[state+1],L))
+# println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
+println()
 #
 # #=
 # F-symbol stuff
