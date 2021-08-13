@@ -1224,7 +1224,7 @@ function ZipInd(ind,sp,L=L+2)
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
 
-	if (state==0) && iseven(L) && ((ind-1)&(4^L-1))==1
+	if (state==0) && (isodd(trailingXs((ind-1)&(4^L-1),L)) || (iseven(L) && ((ind-1)&(4^L-1))==1))
 		state = 1
 	end
 
@@ -1302,6 +1302,7 @@ function Zip!(C,B,i)
 		end
 		for s3 = 0 : 3
 			e4 = nextEdge!(e1,s3,false)
+			println("e4: ", e4)
 			if e4 == false
 				continue
 			end
@@ -1332,6 +1333,9 @@ function Zip!(C,B,i)
 				if mainFlag(longFlag_,ni,L+2)!=0 || FSymbol!(4,e1,4,e3,e2,e4)==0
 					continue
 				end
+				println("s4: ", s4)
+				println("ind: ", stringFromEdgeState(longEdgeState_[ind],L+2))
+				println("ni: ", stringFromEdgeState(longEdgeState_[ni],L+2))
 				# println(4,e1,4,e3,e2,e4," = ",FSymbol!(4,e1,4,e3,e2,e4))
 				C[ni] += FSymbol!(4,e1,4,e3,e2,e4) * B[ind]
 				# C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
@@ -1521,9 +1525,9 @@ for i = 1 : 4^L
 end
 mat = mat[:,2:end]
 
-ρ = adjoint(mat) * ρ * mat
-println(size(ρ))
-ex,vx = eigen(Matrix(ρ))
+ρx = adjoint(mat) * ρ * mat
+println(size(ρx))
+ex,vx = eigen(Matrix(ρx))
 println(real(ex))
 
 #
@@ -1537,7 +1541,25 @@ println(real(ex))
 #
 
 
-
+# for ind = 1 : 4^L
+# 	if mainFlag(flag_,ind,L)==0
+# 		str = stringFromState(ind-1,L)
+# 		println()
+# 		println(str, " = ", stringFromEdgeState(edgeState_[ind],L))
+# 		testV = zeros(4^L)
+# 		testV[ind] = 1
+# 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
+#
+# 		testU = ρ * testV
+# 		for i = 1 : 4^L
+# 			if testU[i] != 0
+# 				if mainFlag(flag_,i,L) == 0
+# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
+# 				end
+# 			end
+# 		end
+# 	end
+# end
 
 
 # for ind = 1 : 4^L
@@ -1565,49 +1587,48 @@ println(real(ex))
 
 
 # for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-# 	# if (ind-1)&(4^(L+2)-1) != 1
-# 	# 	continue
-# 	# end
-# 	inL = L+2
-# 	edgeState = longEdgeState_
-# 	flag = longFlag_
-#
-# 	if mainFlag(flag,ind,inL)==0
-#
-# 		str = stringFromState(ind-1,inL)
+# 	if mainFlag(longFlag_,ind,L+2)==0
+# 		str = stringFromState(ind-1,L+2)
 # 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
+# 		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
 # 		testV = zeros(4^(L+3)*(L+2))
 # 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(flag,ind,inL)==0)
-#
-# 		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
-# 		# testU = zip * testV
+# 		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
 #
 # 		testU = detach * testV
-#
-# 		outL = L
-# 		flag = flag_
-# 		# edgeState = edgeState_
-# 		edgeState = edgeState_
 # 		for i = 1 : 4^L
-# 			# if i != 2
-# 			# 	continue
-# 			# end
 # 			if testU[i] != 0
-# 				if mainFlag(flag,i,outL) == 0
-# 					# println(edgeState[ind])
-# 					# println(stringFromState(i-1,outL), " has value ", testU[i])
-# 					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
-# 				# # else
-# 				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
+# 				if mainFlag(flag_,i,L) == 0
+# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
 # 				end
 # 			end
 # 		end
-#
 # 	end
 # end
 
+
+
+zip = LinearMap((C,B)->Zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+for ind = 4^(L+3)+1 : 4^(L+3)*(L+2)
+	# if mainFlag(longFlag_,ind,L+2)==0 && ind==1045
+	if mainFlag(longFlag_,ind,L+2)==0 && ind==2069
+		str = stringFromState(ind-1,L+2)
+		println()
+		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
+		testV = zeros(4^(L+3)*(L+2))
+		testV[ind] = 1
+		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
+
+		testU = zip * testV
+		for i = 4^(L+3)*2+1 : 4^(L+3)*(L+2)
+			if testU[i] != 0
+				if mainFlag(longFlag_,i,L+2) == 0
+					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+				end
+			end
+		end
+	end
+end
 
 
 # println()
@@ -1616,7 +1637,7 @@ println(real(ex))
 # smallρ = Matrix(adjoint(v)*ρ*v)
 # smalle,smallv = eigen(smallH+smallT+smallρ)
 # Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# Ts = diag(adjoint(smallv)*smallT*smallv)
+# Ts = complex(diag(adjoint(smallv)*smallT*smallv))
 # Ps = real(map(log,Ts)/(2*π*im))*L
 # ρs = real(diag(adjoint(smallv)*smallρ*smallv))
 # HPρs = hcat(Hs,Ps,ρs)
