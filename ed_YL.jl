@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=3
+const L=4
 # const N=6
 
 #=
@@ -169,9 +169,8 @@ function flag!(ind,L=L)
 		state=0
 		evenxs=false
 	end
-	println("L: ", L)
 	for pos = 0 : L-1
-		println(pos+1, ": ", tot)
+		tot%=3
 		a=(state >> (2*pos)) & 3
 		if a==0
 			if(evenxs)
@@ -179,16 +178,12 @@ function flag!(ind,L=L)
 			end
 			evenxs = ! evenxs
 			if ((pos+1)==below || (below!=0 && pos==L-1))
-				# println("here")
 				tot = 3-tot
 			end
 		else
 			if(!evenxs)
 				# not allowed
 				f |= 3 << flagshift
-				# println("here")
-				# println(flagshift)
-				# println(bitstring(f))
 				return f
 			end
 			if a==2
@@ -197,14 +192,12 @@ function flag!(ind,L=L)
 				tot+=2
 			end
 		end
-		tot%=3
 	end
 	tot=tot-start
 	if tot<0
 		tot+=3
 	end
-	# tot%=3
-	println(tot)
+	tot%=3
 	if state==0 && isodd(L)
 		f |= 3 << flagshift
 		return f
@@ -256,13 +249,13 @@ function setFlag!(flag,ind,L=L)
 			elseif a==3
 				tot+=2
 			end
-			tot%=3
 		end
 	end
 	tot=tot-start # compare with start
 	if tot<0
 		tot+=3
 	end
+	tot%=3
 	if state==0 && isodd(L)
 		flag[ind] |= 3 << flagshift
 		return
@@ -281,18 +274,18 @@ for i = 1 : 4^(L+3)*(L+2)
 	setFlag!(longFlag_,i,L+2)
 end
 
-# println("begin")
-# for i = 1 : 4^L
-# 	if i==4^L
-# 		j = 1
-# 	else
-# 		j = i+1
-# 	end
-# 	if (flag_[j] != flagYT_[i])
-# 		println(i)
-# 	end
-# end
-# println("end")
+println("begin")
+for i = 1 : 4^L
+	if i==4^L
+		j = 1
+	else
+		j = i+1
+	end
+	if (flag_[j] != flag!(j))
+		println(i)
+	end
+end
+println("end")
 
 
 diag_ = zeros(Float64,4^L)
@@ -848,7 +841,7 @@ function FSymbol!(i,j,k,l,m,n)
 			return y1
 		end
 	end
-	println(i,j,k,l,m,n)
+	# println(i,j,k,l,m,n)
 	error("FSymbol not found")
 end
 
@@ -1112,31 +1105,40 @@ function Attach!(C,B)
 		if (isodd(trailingXs(state))) # start label is 1
 			ni = AttachInd(ind,sXX,0)
 			if mainFlag(longFlag_,ni,L+2) != 0
+				println("a ", ind)
 				error("disallowed state")
 			end
 			C[ni] += B[ind]
 		else
 			ni = AttachInd(ind,sXX,0)
 			if mainFlag(longFlag_,ni,L+2) != 0
+				println("b ",ind)
+				println(flag!(ni,L+2))
+				println(longFlag_[ni])
 				error("disallowed state")
 			end
 			C[ni] += 1/ζ * B[ind]
 			# ni = newInd(state,L+2,s00,0,0,L+2)
 			ni = AttachInd(ind,s00,0)
 			if mainFlag(longFlag_,ni,L+2) != 0
+				println("c ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sPM,0,1,L+2)
 			ni = AttachInd(ind,sPM,1)
-			if mainFlag(longFlag_,ni,L+2) == 0
-				C[ni] += ξ * B[ind]
+			if mainFlag(longFlag_,ni,L+2) != 0
+				println("d ",ind)
+				error("disallowed state")
 			end
+			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sMP,0,2,L+2)
 			ni = AttachInd(ind,sMP,2)
-			if mainFlag(longFlag_,ni,L+2) == 0
-				C[ni] += ξ * B[ind]
+			if mainFlag(longFlag_,ni,L+2) != 0
+				println("e ",ind)
+				error("disallowed state")
 			end
+			C[ni] += ξ * B[ind]
 		end
 	end
 end
@@ -1216,10 +1218,10 @@ function ZipInd(ind,sp,L=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-state = stateFromString("yxxx-_1",L+2)
-println(mainFlag(longFlag_,state+1,L+2)==0)
-println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
-println(stringFromState(ZipInd(state+1,sPM)-1,L+2), " = ", stringFromEdgeState(EdgeState!(ZipInd(state+1,sPM),longFlag_,L+2),L+2))
+# state = stateFromString("yxxx-_1",L+2)
+# println(mainFlag(longFlag_,state+1,L+2)==0)
+# println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+# println(stringFromState(ZipInd(state+1,sPM)-1,L+2), " = ", stringFromEdgeState(EdgeState!(ZipInd(state+1,sPM),longFlag_,L+2),L+2))
 
 function Zip!(C,B,i)
 	for ind = 1 : 4^(L+3)*(L+2)
@@ -1262,10 +1264,10 @@ function Zip!(C,B,i)
 					end
 				end
 				ni = ZipInd(ind,(s3,s4))
-				if mainFlag(longFlag_,ni,L+2)!=0 && FSymbol!(4,e1,4,e3,e2,e4)!=0
+				if mainFlag(longFlag_,ni,L+2)!=0 || FSymbol!(4,e1,4,e3,e2,e4)==0
 					continue
 				end
-				println(4,e1,4,e3,e2,e4," = ",FSymbol!(4,e1,4,e3,e2,e4))
+				# println(4,e1,4,e3,e2,e4," = ",FSymbol!(4,e1,4,e3,e2,e4))
 				C[ni] += FSymbol!(4,e1,4,e3,e2,e4) * B[ind]
 				# C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
 			# # if (ind == 4^L)
@@ -1328,6 +1330,12 @@ function Detach!(C,B)
 		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
+
+		# below = ((ind-1)>>(2*(L+3)))
+		# if below != L+1
+		# 	error("bad")
+		# end
+
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1
@@ -1386,46 +1394,70 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 
 zip = LinearMap((C,B)->Zip!(C,B,1),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 
-state = stateFromString("z0xx0_0",L+2)
-if mainFlag(longFlag_,state+1,L+2)==0
-	println()
-	println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
-	testV = zeros(4^(L+3)*(L+2))
-	testV[state+1] = 1
-	testU = zip * testV
-	for i = 1 : 4^(L+3)*(L+2)
-		if testU[i] != 0
-			if mainFlag(longFlag_,i,L+2) == 0
-				println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
-			else
-				println("bad flag: ", i, " = ", stringFromIndex(i,L+2))
-			end
-		end
-	end
-end
+# state = stateFromString("z0xx0_0",L+2)
+# if mainFlag(longFlag_,state+1,L+2)==0
+# 	println()
+# 	println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+# 	testV = zeros(4^(L+3)*(L+2))
+# 	testV[state+1] = 1
+# 	testU = zip * testV
+# 	for i = 1 : 4^(L+3)*(L+2)
+# 		if testU[i] != 0
+# 			if mainFlag(longFlag_,i,L+2) == 0
+# 				println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 			else
+# 				println("bad flag: ", i, " = ", stringFromIndex(i,L+2))
+# 			end
+# 		end
+# 	end
+# end
 
 # println(stringFromState( Ind(state+1,sMP,1)-1, L+2))
 
 #
 attach = LinearMap((C,B)->Attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
 ρ = attach
+
 # #
 for i = 1 : L
-	zip = LinearMap((C,B)->Zip!(C,B,i,longZ3Flag_),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+	global zip = LinearMap((C,B)->Zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 	global ρ = zip * ρ
 end
 #
 # # t = LinearMap((C,B)->Tfunc!(C,B,L+2,false),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
 # # ρ = t * ρ
 #
+
 detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
-ρ = detach
+ρ = detach * ρ
+
+# println("computing eigenvalues...")
+# @time e,v = eigs(ρ,nev=1,which=:SR)
+# println(sort(real(e)))
+
+# println(size(ρ))
 #
 # # println(Matrix(adjoint(v) * ρ * v))
 #
 # println(norm(Matrix(ρ)))
-# e,v = eigen(Matrix(ρ))
-# # println(e)
+# good = zeros(Bool,4)
+mat = zeros(Bool,4^L)
+for i = 1 : 4^L
+	if mainFlag(flag_,i) == 0
+		g = zeros(Bool,4^L)
+		g[i] = 1
+		global mat = hcat(mat,g)
+	end
+end
+# mat = mat[2:size(mat,2)]
+
+ρ = adjoint(mat) * ρ * mat
+
+println(size(ρ))
+
+e,v = eigen(Matrix(ρ))
+println(real(e))
+
 # # println(Matrix(ρ))
 #
 #
@@ -1476,23 +1508,22 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # end
 #
 #
-#
-# # println()
-# # smallH = Matrix(diagm(e))
-# # smallT = Matrix(adjoint(v)*T*v)
-# # smallρ = Matrix(adjoint(v)*ρ*v)
-# # println(smallρ)
-# # smalle,smallv = eigen(smallH+smallT+smallρ)
-# # Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# # Ts = diag(adjoint(smallv)*smallT*smallv)
-# # Ps = real(map(log,Ts)/(2*π*im))*L
-# # ρs = diag(adjoint(smallv)*smallρ*smallv)
-# # HPρs = hcat(Hs,Ps,ρs)
-# # HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-# # s=""
-# # s*=string(HPρs[1][1])
-# #
-# # print(MathematicaMatrix(HPρs))
+
+# println()
+# smallH = Matrix(diagm(e))
+# smallT = Matrix(adjoint(v)*T*v)
+# smallρ = Matrix(adjoint(v)*ρ*v)
+# smalle,smallv = eigen(smallH+smallT+smallρ)
+# Hs = real(diag(adjoint(smallv)*smallH*smallv))
+# Ts = diag(adjoint(smallv)*smallT*smallv)
+# Ps = real(map(log,Ts)/(2*π*im))*L
+# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+# HPρs = hcat(Hs,Ps,ρs)
+# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+# s=""
+# s*=string(HPρs[1][1])
+# print(MathematicaMatrix(HPρs))
+
 #
 #
 # # function Zip!(C,B,flag,z3Flag)
