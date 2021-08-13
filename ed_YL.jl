@@ -169,21 +169,26 @@ function flag!(ind,L=L)
 		state=0
 		evenxs=false
 	end
+	println("L: ", L)
 	for pos = 0 : L-1
-		println(tot)
+		println(pos+1, ": ", tot)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			if(evenxs)
 				f |= 1<<pos
 			end
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
+				# println("here")
 				tot = 3-tot
 			end
 		else
 			if(!evenxs)
 				# not allowed
 				f |= 3 << flagshift
+				# println("here")
+				# println(flagshift)
+				# println(bitstring(f))
 				return f
 			end
 			if a==2
@@ -191,8 +196,8 @@ function flag!(ind,L=L)
 			elseif a==3
 				tot+=2
 			end
-			tot%=3
 		end
+		tot%=3
 	end
 	tot=tot-start
 	if tot<0
@@ -205,7 +210,8 @@ function flag!(ind,L=L)
 		return f
 	end
 	f |= tot << flagshift
-	return (f >> flagshift) & 3
+	return f
+	# return (f >> flagshift) & 3
 end
 
 function setFlag!(flag,ind,L=L)
@@ -236,7 +242,7 @@ function setFlag!(flag,ind,L=L)
 				flag[ind] |= 1<<pos
 			end
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		else
@@ -272,7 +278,7 @@ end
 
 longFlag_ = zeros(Int32,4^(L+3)*(L+2))
 for i = 1 : 4^(L+3)*(L+2)
-	setFlag!(longFlag_,i)
+	setFlag!(longFlag_,i,L+2)
 end
 
 # println("begin")
@@ -559,10 +565,10 @@ println(sort(e))
 
 # Translation (lattice shift)
 function TInd!(ind,L,right)
-	if (ind==2 && iseven(L))
+	if ind==2 && iseven(L)
 		return 1
 	end
-	if (ind==1 && iseven(L))
+	if ind==1 && iseven(L)
 		return 2
 	end
 	state = (ind-1) & (4^L-1)
@@ -643,6 +649,7 @@ print(MathematicaMatrix(HPs))
 Edge state stuff
 =#
 
+const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
 const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
 
 function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
@@ -664,7 +671,7 @@ function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -703,7 +710,7 @@ function EdgeState!(ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -756,95 +763,95 @@ end
 # # println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
 # println()
 
-#
-# #=
-# F-symbol stuff
-# =#
-#
-# function IsInvertible!(i)
-# 	return i<4
-# end
-#
-# function Dual!(i)
-# 	if i==2
-# 		return 3
-# 	elseif i==3
-# 		return 2
-# 	else
-# 		return i
-# 	end
-# end
-#
-# function Fusion!(i,j)
-# 	ans = []
-# 	if i<4
-# 		if j<4
-# 			append!(ans,1+((i+j-2)%3))
-# 		else
-# 			append!(ans,4+((i+j-2)%3))
-# 		end
-# 	else
-# 		if j<4
-# 			return Fusion!(1+((4-j)%3),i)
-# 		else
-# 			append!(ans,1+((3+i-j)%3))
-# 			append!(ans,[4,5,6])
-# 		end
-# 	end
-# 	return ans
-# end
-#
-# function HasFusion!(i,j,k)
-# 	fused = Fusion!(i,j)
-# 	return k in fused
-# end
-#
-# function Add!(i,j)
-# 	return 4+((i+j-1)%3)
-# end
-#
-# function FSymbol!(i,j,k,l,m,n)
-# 	if !( HasFusion!(i,j,m) && HasFusion!(k,Dual!(l),Dual!(m)) && HasFusion!(Dual!(l),i,Dual!(n)) && HasFusion!(j,k,n) )
-# 		return 0
-# 	end
-# 	if IsInvertible!(i) || IsInvertible!(j) || IsInvertible!(k) || IsInvertible!(l)
-# 		return 1
-# 	end
-# 	if IsInvertible!(m) && IsInvertible!(n)
-# 		return 1/ζ
-# 	end
-# 	if IsInvertible!(m) || IsInvertible!(n)
-# 		return ξ
-# 	end
-# 	if i!=4
-# 		return FSymbol!(4, j, Add!(k,i-4), l, m, n)
-# 	end
-# 	if j!=4
-# 		return FSymbol!(4, 4, k, Add!(l,j-4), m, n)
-# 	end
-# 	if k!=4
-# 		return FSymbol!(4, 4, 4, Add!(l,4-k), m, Add!(n,4-k))
-# 	end
-# 	if m!=4
-# 		return FSymbol!(4, 4, 4, l, 4, Add!(n,m-4))
-# 	end
-# 	if i==j==k==l==4 && !(IsInvertible!(m)) && !(IsInvertible!(n))
-# 		if l+n==8
-# 			return x
-# 		elseif l+n==9
-# 			return y1
-# 		elseif l+n==10
-# 			return y2
-# 		elseif l+n==11
-# 			return z
-# 		elseif l+n==12
-# 			return y1
-# 		end
-# 	end
-# 	error("FSymbol not found")
-# end
-#
-#
+
+#=
+F-symbol stuff
+=#
+
+function IsInvertible!(i)
+	return i<4
+end
+
+function Dual!(i)
+	if i==2
+		return 3
+	elseif i==3
+		return 2
+	else
+		return i
+	end
+end
+
+function Fusion!(i,j)
+	ans = []
+	if i<4
+		if j<4
+			append!(ans,1+((i+j-2)%3))
+		else
+			append!(ans,4+((i+j-2)%3))
+		end
+	else
+		if j<4
+			return Fusion!(1+((4-j)%3),i)
+		else
+			append!(ans,1+((3+i-j)%3))
+			append!(ans,[4,5,6])
+		end
+	end
+	return ans
+end
+
+function HasFusion!(i,j,k)
+	fused = Fusion!(i,j)
+	return k in fused
+end
+
+function Add!(i,j)
+	return 4+((i+j-1)%3)
+end
+
+function FSymbol!(i,j,k,l,m,n)
+	if !( HasFusion!(i,j,m) && HasFusion!(k,Dual!(l),Dual!(m)) && HasFusion!(Dual!(l),i,Dual!(n)) && HasFusion!(j,k,n) )
+		return 0
+	end
+	if IsInvertible!(i) || IsInvertible!(j) || IsInvertible!(k) || IsInvertible!(l)
+		return 1
+	end
+	if IsInvertible!(m) && IsInvertible!(n)
+		return 1/ζ
+	end
+	if IsInvertible!(m) || IsInvertible!(n)
+		return ξ
+	end
+	if i!=4
+		return FSymbol!(4, j, Add!(k,i-4), l, m, n)
+	end
+	if j!=4
+		return FSymbol!(4, 4, k, Add!(l,j-4), m, n)
+	end
+	if k!=4
+		return FSymbol!(4, 4, 4, Add!(l,4-k), m, Add!(n,4-k))
+	end
+	if m!=4
+		return FSymbol!(4, 4, 4, l, 4, Add!(n,m-4))
+	end
+	if i==j==k==l==4 && !(IsInvertible!(m)) && !(IsInvertible!(n))
+		if l+n==8
+			return x
+		elseif l+n==9
+			return y1
+		elseif l+n==10
+			return y2
+		elseif l+n==11
+			return z
+		elseif l+n==12
+			return y1
+		end
+	end
+	error("FSymbol not found")
+end
+
+
 #=
 Z3 stuff
 =#
@@ -879,7 +886,7 @@ function Z3Flag!(ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -918,7 +925,7 @@ function setZ3Flag!(z3Flag,ind,flag,L)
 		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
-			if evenxs && ((pos+1)==below || (below!=0 && pos==L-1))
+			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
 		elseif a==2
@@ -1045,17 +1052,17 @@ function Inv!(s)
 end
 #
 # Twisted Z3 charge
-function Q!(s)
-	if s==0
-		return 0
-	else
-		return s-1
-	end
-end
+# function Q!(s)
+# 	if s==0
+# 		return 0
+# 	else
+# 		return s-1
+# 	end
+# end
 #
 
 function AttachInd(ind,sp,start,L=L+2)
-	if ind==2
+	if ind==2 && iseven(L)
 		state = 0
 	else
 		state = (ind-1)
@@ -1089,7 +1096,7 @@ longFlag_ = zeros(Int32,4^(L+3)*(L+2))
 
 println("preparing...")
 for i = 1 : 4^(L+3)*(L+2)
-	setFlag!(longFlag_,i)
+	setFlag!(longFlag_,i,L+2)
 end
 
 function Attach!(C,B)
@@ -1179,80 +1186,140 @@ end
 # 	end
 # end
 #
-# function Zip!(C,B,i,longZ3Flag)
-# 	for ind = 1 : 4^(L+2)
-# 		C[ind] = 0
-# 	end
-# 	for ind = 1 : 4^(L+2)
-# 		# if mainFlag(longFlag_,ind,L+2) != 0
-# 		# 	continue
-# 		# end
-# 		z3 = (longZ3Flag[ind] >> 2*(i-1)) & 3
-# 		state = stateFromInd(ind,L+2)
-# 		# if (ind == 4^L)
-# 		# 	println(i)
-# 		# 	println(stringFromIndex(ind,L+2))
-# 		# 	println(localStatePair(state,3,L+2))
-# 		# 	println()
-# 		# end
-# 		s1,s2 = localStatePair(state,i,L+2)
-# 		for s3 = 0 : 3
-# 			for s4 = 0 : 3
-# 				ni = newInd(state,i,(s3,s4),L+2)
-# 				if mainFlag(longFlag_,ind,L+2) == 0
-# 					C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
-# 				# if (ind == 4^L)
-# 					edgeState = longEdgeState_[ind]
-# 					j = i
-# 					e1 = (edgeState>>(3*(j-1)))&7
-# 					j = nextSite(j,L+2)
-# 					e2 = (edgeState>>(3*(j-1)))&7
-# 					j = nextSite(j,L+2)
-# 					e3 = (edgeState>>(3*(j-1)))&7
-# 					if e1<4
-# 						e4=e1+3
-# 					else
-# 						if s3==0
-# 							e4=e1-3
-# 						else
-# 							e4=4+((e1+s3-2)%3)
-# 						end
-# 					end
-# 					if (ZipF!(z3,s1,s2,s3,s4) != 0) && (FSymbol!(4,e1,4,e3,e2,e4) != ZipF!(z3,s1,s2,s3,s4))
-# 						# println(i)
-# 						println(stringFromIndex(ind,L+2)," at position ",i)
-# 						# println(revmapping[s4])
-# 						println("e1...e4: ",edgeRevmapping[e1],edgeRevmapping[e2],edgeRevmapping[e3],edgeRevmapping[e4])
-# 						# println(4,e1,4,e3,e2,e4)
-# 						println("FSymbol(",4,e1,4,e3,e2,e4,") = ", FSymbol!(4,e1,4,e3,e2,e4))
-# 						# println(edgeState[nextSite(i,L+2)])
-# 						println(stringFromEdgeState(edgeState,L+2))
-# 						# println(z3,s1,s2,s3,s4)
-# 						println("ZipF(",z3,s1,s2,s3,s4,") = ",ZipF!(z3,s1,s2,s3,s4))
-# 						println()
-# 					end
-# 				# end
-# 				end
-#
-# 				# if B[ind] != 0
-# 				# 	println(newInd(state,i,(s3,s4),L+2))
-# 				# end
-# 				# if B[ind] != 0 && ZipF!(z3,s1,s2,s3,s4) != 0
-# 				# 	println("z3,s1,s2,s3,s4: ", z3,s1,s2,s3,s4)
-# 				# 	println("F: ", ZipF!(z3,s1,s2,s3,s4))
-# 				# 	ni = newInd(state,i,(s3,s4),L+2)
-# 				# 	println(stringFromIndex(ni,L+2))
-# 				# 	println(stringFromEdgeState(longEdgeState_[ni],L+2))
-# 				# 	println("value: ", ZipF!(z3,s1,s2,s3,s4) * B[ind])
-# 				# 	C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
-# 				# 	println(norm(C))
-# 				# end
-# 			end
-# 		end
-# 	end
-# 	# println(C[newInd(state,i,(0,0),L+2)])
-# 	# println("norm: ", norm(C))
-# end
+function ZipInd(ind,sp,L=L+2)
+	below = ((ind-1)>>(2*(L+1)))
+	if below == 0
+		error("no ρ from below")
+	end
+	start = ((ind-1)>>(2*L)) & 3
+	i = below
+	below += 1
+	state = (ind-1) & (4^L-1)
+	if state==1 && iseven(L)
+		state = 0
+	end
+
+	(a,b)=sp
+
+	state &= ~(3<<(2*(i-1)))
+	state |= (a<<(2*(i-1)))
+
+	j=i+1
+	state &= ~(3<<(2*(j-1)))
+	state |= (b<<(2*(j-1)))
+
+	if (state==0) && iseven(L) && ind==1
+		state = 1
+	end
+
+	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
+end
+
+state = stateFromString("yxxx-_1",L+2)
+# println(flag!(state+1,L+2) >> (L+4))
+println(mainFlag(longFlag_,state+1,L+2)==0)
+println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+println(stringFromState(ZipInd(state+1,sPM)-1,L+2), " = ", stringFromEdgeState(EdgeState!(ZipInd(state+1,sPM),longFlag_,L+2),L+2))
+
+function Zip!(C,B,i)
+	for ind = 1 : 4^(L+3)*(L+2)
+		C[ind] = 0
+	end
+	for ind = 1 : 4^(L+3)*(L+2)
+		if mainFlag(longFlag_,ind,L+2) != 0
+			continue
+		end
+		# z3 = (longZ3Flag[ind] >> 2*(i-1)) & 3
+		state = stateFromInd(ind,L+2)
+		es = longEdgeState_[ind]
+		j = i
+		e1 = (es>>(3*(j-1)))&7
+		j += 1
+		e2 = (es>>(3*(j-1)))&7
+		j += 1
+		e3 = (es>>(3*(j-1)))&7
+
+		# e1 = edgeMapping[es[i]]
+		# e2 = edgeMapping[es[i+1]]
+		# e3 = edgeMapping[es[i+2]]
+
+		# if (ind == 4^L)
+		# 	println(i)
+		# 	println(stringFromIndex(ind,L+2))
+		# 	println(localStatePair(state,3,L+2))
+		# 	println()
+		# end
+		s1,s2 = localStatePair(state,i,L+2)
+		for s3 = 0 : 3
+			for s4 = 0 : 3
+
+				if e1==1
+					e4=e1+3
+				else
+					if s3==0
+						e4=e1-3
+					else
+						e4=4+((e1+s3-2)%3)
+					end
+				end
+
+				ni = ZipInd(state+1,(s3,s4))
+				if mainFlag(longFlag_,ni,L+2)!=0 && FSymbol!(4,e1,4,e3,e2,e4)!=0
+					continue
+				end
+				C[ni] += FSymbol!(4,e1,4,e3,e2,e4) * B[ind]
+				# C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
+			# # if (ind == 4^L)
+			# 	edgeState = longEdgeState_[ind]
+			# 	j = i
+			# 	e1 = (edgeState>>(3*(j-1)))&7
+			# 	j = nextSite(j,L+2)
+			# 	e2 = (edgeState>>(3*(j-1)))&7
+			# 	j = nextSite(j,L+2)
+			# 	e3 = (edgeState>>(3*(j-1)))&7
+			# 	if e1<4
+			# 		e4=e1+3
+			# 	else
+			# 		if s3==0
+			# 			e4=e1-3
+			# 		else
+			# 			e4=4+((e1+s3-2)%3)
+			# 		end
+			# 	end
+			# 	if (ZipF!(z3,s1,s2,s3,s4) != 0) && (FSymbol!(4,e1,4,e3,e2,e4) != ZipF!(z3,s1,s2,s3,s4))
+			# 		# println(i)
+			# 		println(stringFromIndex(ind,L+2)," at position ",i)
+			# 		# println(revmapping[s4])
+			# 		println("e1...e4: ",edgeRevmapping[e1],edgeRevmapping[e2],edgeRevmapping[e3],edgeRevmapping[e4])
+			# 		# println(4,e1,4,e3,e2,e4)
+			# 		println("FSymbol(",4,e1,4,e3,e2,e4,") = ", FSymbol!(4,e1,4,e3,e2,e4))
+			# 		# println(edgeState[nextSite(i,L+2)])
+			# 		println(stringFromEdgeState(edgeState,L+2))
+			# 		# println(z3,s1,s2,s3,s4)
+			# 		println("ZipF(",z3,s1,s2,s3,s4,") = ",ZipF!(z3,s1,s2,s3,s4))
+			# 		println()
+			# 	end
+				# end
+
+				# if B[ind] != 0
+				# 	println(newInd(state,i,(s3,s4),L+2))
+				# end
+				# if B[ind] != 0 && ZipF!(z3,s1,s2,s3,s4) != 0
+				# 	println("z3,s1,s2,s3,s4: ", z3,s1,s2,s3,s4)
+				# 	println("F: ", ZipF!(z3,s1,s2,s3,s4))
+				# 	ni = newInd(state,i,(s3,s4),L+2)
+				# 	println(stringFromIndex(ni,L+2))
+				# 	println(stringFromEdgeState(longEdgeState_[ni],L+2))
+				# 	println("value: ", ZipF!(z3,s1,s2,s3,s4) * B[ind])
+				# 	C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
+				# 	println(norm(C))
+				# end
+			end
+		end
+	end
+	# println(C[newInd(state,i,(0,0),L+2)])
+	# println("norm: ", norm(C))
+end
 
 function Detach!(C,B)
 	for ind = 1 : 4^L
@@ -1289,33 +1356,61 @@ function Detach!(C,B)
 	end
 end
 
+# state = stateFromString("y00x0_0",L+2)
+# println()
+# println(mainFlag(longFlag_,state+1,L+2)==0)
+# println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+# B = zeros(4^(L+3)*(L+2))
+# B[state+1] = 1
+# C = zeros(4^(L+3)*(L+2))
+# println(Zip!(C,B,1))
+
 detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 
-state = stateFromString("00xx0_0",L+2)
-println(mainFlag(longFlag_,state+1,L+2)==0)
-println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
-testV = zeros(4^(L+3)*(L+2))
-testV[state+1] = 1
-testU = detach * testV
-for i = 1 : 4^L
-	if testU[i] != 0
-		if mainFlag(flag_,i,L) == 0
-			println(stringFromState(i-1), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
-		else
-			println("bad flag: ", i, " = ", stringFromIndex(i))
-		end
-	end
-end
+# state = stateFromString("00xx0_0",L+2)
+# println(mainFlag(longFlag_,state+1,L+2)==0)
+# println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+# testV = zeros(4^(L+3)*(L+2))
+# testV[state+1] = 1
+# testU = detach * testV
+# for i = 1 : 4^L
+# 	if testU[i] != 0
+# 		if mainFlag(flag_,i,L) == 0
+# 			println(stringFromState(i-1), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
+# 		else
+# 			println("bad flag: ", i, " = ", stringFromIndex(i))
+# 		end
+# 	end
+# end
+
+zip = LinearMap((C,B)->Zip!(C,B,1),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+
+# state = stateFromString("y00x0_0",L+2)
+# println(mainFlag(longFlag_,state+1,L+2)==0)
+# println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+# testV = zeros(4^(L+3)*(L+2))
+# testV[state+1] = 1
+# testU = zip * testV
+# for i = 1 : 4^(L+3)*(L+2)
+# 	if testU[i] != 0
+# 		if mainFlag(longFlag_,i,L+2) == 0
+# 			println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 		else
+# 			println("bad flag: ", i, " = ", stringFromIndex(i,L+2))
+# 		end
+# 	end
+# end
+
 # println(stringFromState( Ind(state+1,sMP,1)-1, L+2))
 
 #
 attach = LinearMap((C,B)->Attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
 ρ = attach
 # #
-# # for i = 1 : L
-# # 	zip = LinearMap((C,B)->Zip!(C,B,i,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
-# # 	global ρ = zip * ρ
-# # end
+for i = 1 : L
+	zip = LinearMap((C,B)->Zip!(C,B,i,longZ3Flag_),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+	global ρ = zip * ρ
+end
 #
 # # t = LinearMap((C,B)->Tfunc!(C,B,L+2,false),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
 # # ρ = t * ρ
