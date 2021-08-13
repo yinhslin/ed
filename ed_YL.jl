@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=6
+const L=4
 # const N=6
 
 #=
@@ -850,107 +850,107 @@ end
 Z3 stuff
 =#
 
-const revZ3Mapping=Dict(0=>'0', 1=>'+', 2=>'-', 3=>'z')
-
-function Z3Flag!(ind,flag,L)
-	z3 = 0
-	if mainFlag(flag,ind,L) != 0
-		return z3
-	end
-	below = ((ind-1)>>(2*(L+1)))
-	start = ((ind-1)>>(2*L)) & 3
-	state = (ind-1)&(4^L-1)
-	# if(ind==4^L)
-	# 	state=0
-	# end
-	evenxs = iseven(trailingXs(state,L))
-	tot = start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		tot%=3
-		# if evenxs
-			z3 |= (tot << (2*pos))
-		# else
-			# edge to the left is invertible
-			# z3 |= (3 << (2*pos))
-		# end
-		a=(state >> (2*pos)) & 3
-		if a==0
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		elseif a==2
-			tot+=1
-		elseif a==3
-			tot+=2
-		end
-	end
-	return z3
-end
-
-function setZ3Flag!(z3Flag,ind,flag,L)
-	if mainFlag(flag,ind,L) != 0
-		return
-	end
-	below = ((ind-1)>>(2*(L+1)))
-	start = ((ind-1)>>(2*L)) & 3
-	state = (ind-1)&(4^L-1)
-	# if(ind==4^L)
-	# 	state=0
-	# end
-	evenxs = iseven(trailingXs(state,L))
-	tot = start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		tot%=3
-		if evenxs
-			z3Flag[ind] |= (tot << (2*pos))
-		else
-			# edge to the left is invertible
-			z3Flag[ind] |= (3 << (2*pos))
-		end
-		a=(state >> (2*pos)) & 3
-		if a==0
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		elseif a==2
-			tot+=1
-		elseif a==3
-			tot+=2
-		end
-	end
-end
-
-function stringFromZ3(z3Labels,L)
-	s=""
-	for i in 1 : L
-		s*=revZ3Mapping[(z3Labels&3)]
-		z3Labels>>=2
-	end
-	return s
-end
-
-flag_ = zeros(Int32,4^(L+1)*L)
-z3Flag_ = zeros(Int64,4^(L+1)*L)
-
-println("preparing...")
-for i = 1 : 4^(L+1)*L
-	setFlag!(flag_,i)
-end
-
-println("preparing...")
-for i = 1 : 4^(L+1)*L
-	setZ3Flag!(z3Flag_,i,flag_,L)
-end
+# const revZ3Mapping=Dict(0=>'0', 1=>'+', 2=>'-', 3=>'z')
+#
+# function Z3Flag!(ind,flag,L)
+# 	z3 = 0
+# 	if mainFlag(flag,ind,L) != 0
+# 		return z3
+# 	end
+# 	below = ((ind-1)>>(2*(L+1)))
+# 	start = ((ind-1)>>(2*L)) & 3
+# 	state = (ind-1)&(4^L-1)
+# 	# if(ind==4^L)
+# 	# 	state=0
+# 	# end
+# 	evenxs = iseven(trailingXs(state,L))
+# 	tot = start
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		tot%=3
+# 		# if evenxs
+# 			z3 |= (tot << (2*pos))
+# 		# else
+# 			# edge to the left is invertible
+# 			# z3 |= (3 << (2*pos))
+# 		# end
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 			if ((pos+1)==below || (below!=0 && pos==L-1))
+# 				tot = 3-tot
+# 			end
+# 		elseif a==2
+# 			tot+=1
+# 		elseif a==3
+# 			tot+=2
+# 		end
+# 	end
+# 	return z3
+# end
+#
+# function setZ3Flag!(z3Flag,ind,flag,L)
+# 	if mainFlag(flag,ind,L) != 0
+# 		return
+# 	end
+# 	below = ((ind-1)>>(2*(L+1)))
+# 	start = ((ind-1)>>(2*L)) & 3
+# 	state = (ind-1)&(4^L-1)
+# 	# if(ind==4^L)
+# 	# 	state=0
+# 	# end
+# 	evenxs = iseven(trailingXs(state,L))
+# 	tot = start
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		tot%=3
+# 		if evenxs
+# 			z3Flag[ind] |= (tot << (2*pos))
+# 		else
+# 			# edge to the left is invertible
+# 			z3Flag[ind] |= (3 << (2*pos))
+# 		end
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 			if ((pos+1)==below || (below!=0 && pos==L-1))
+# 				tot = 3-tot
+# 			end
+# 		elseif a==2
+# 			tot+=1
+# 		elseif a==3
+# 			tot+=2
+# 		end
+# 	end
+# end
+#
+# function stringFromZ3(z3Labels,L)
+# 	s=""
+# 	for i in 1 : L
+# 		s*=revZ3Mapping[(z3Labels&3)]
+# 		z3Labels>>=2
+# 	end
+# 	return s
+# end
+#
+# flag_ = zeros(Int32,4^(L+1)*L)
+# z3Flag_ = zeros(Int64,4^(L+1)*L)
+#
+# println("preparing...")
+# for i = 1 : 4^(L+1)*L
+# 	setFlag!(flag_,i)
+# end
+#
+# println("preparing...")
+# for i = 1 : 4^(L+1)*L
+# 	setZ3Flag!(z3Flag_,i,flag_,L)
+# end
 
 # state = stateFromString("xy-xx0_1",L)
 # println()
@@ -1070,7 +1070,7 @@ function AttachInd(ind,sp,start,L=L+2)
 	state &= ~(3<<(2*(i-1)))
 	state |= (a<<(2*(i-1)))
 
-	j=1
+	j = 1
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
 
@@ -1189,6 +1189,7 @@ end
 # 	end
 # end
 #
+
 function ZipInd(ind,sp,L=L+2)
 	below = ((ind-1)>>(2*(L+1)))
 	if below == 0
@@ -1211,7 +1212,7 @@ function ZipInd(ind,sp,L=L+2)
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
 
-	if (state==0) && iseven(L) && ind==1
+	if (state==0) && iseven(L) && ((ind-1)&(4^L-1))==1
 		state = 1
 	end
 
@@ -1390,7 +1391,7 @@ function Detach!(C,B)
 
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
-		if ni==1 && ((ind-1)&(4^(L+2)-1))==1
+		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
 			ni=2
 		end
 		if mainFlag(flag_,ni,L) != 0
@@ -1503,10 +1504,10 @@ for i = 1 : 4^L
 end
 mat = mat[:,2:end]
 
-# ρ = adjoint(mat) * ρ * mat
-# println(size(ρ))
-# ex,vx = eigen(Matrix(ρ))
-# println(real(ex))
+ρ = adjoint(mat) * ρ * mat
+println(size(ρ))
+ex,vx = eigen(Matrix(ρ))
+println(real(ex))
 
 #
 #
@@ -1558,21 +1559,23 @@ mat = mat[:,2:end]
 #
 #
 
-println()
-smallH = Matrix(diagm(e))
-smallT = Matrix(adjoint(v)*T*v)
-smallρ = Matrix(adjoint(v)*ρ*v)
-smalle,smallv = eigen(smallH+smallT+smallρ)
+# println()
+# smallH = Matrix(diagm(e))
+# smallT = Matrix(adjoint(v)*T*v)
+# smallρ = Matrix(adjoint(v)*ρ*v)
+# smalle,smallv = eigen(smallH+smallT+smallρ)
+# Hs = real(diag(adjoint(smallv)*smallH*smallv))
+# Ts = diag(adjoint(smallv)*smallT*smallv)
+# Ps = real(map(log,Ts)/(2*π*im))*L
+# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+# HPρs = hcat(Hs,Ps,ρs)
+# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+# s=""
+# s*=string(HPρs[1][1])
+# print(MathematicaMatrix(HPρs))
 
-Hs = real(diag(adjoint(smallv)*smallH*smallv))
-Ts = diag(adjoint(smallv)*smallT*smallv)
-Ps = real(map(log,Ts)/(2*π*im))*L
-ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-HPρs = hcat(Hs,Ps,ρs)
-HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-s=""
-s*=string(HPρs[1][1])
-print(MathematicaMatrix(HPρs))
+
+
 
 # HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
 # s=""
