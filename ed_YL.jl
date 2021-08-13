@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=4
+const L=2
 # const N=6
 
 #=
@@ -55,6 +55,9 @@ end
 function stringFromState(state,L=L)
 	below = (state>>(2*(L+1)))
 	start = (state>>(2*L)) & 3
+	if iseven(L) && (state&(4^L-1))==1
+		state -= 1
+	end
 	s=""
 	for i in 1 : L
 		if i == below
@@ -629,7 +632,7 @@ smallH = Matrix(diagm(e))
 smallT = Matrix(adjoint(v)*T*v)
 smalle,smallv = eigen(smallH+smallT)
 Hs = real(diag(adjoint(smallv)*smallH*smallv))
-Ts = diag(adjoint(smallv)*smallT*smallv)
+Ts = complex(diag(adjoint(smallv)*smallT*smallv))
 Ps = real(map(log,Ts)/(2*π*im))*L
 HPs = hcat(Hs,Ps)
 HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
@@ -1061,7 +1064,6 @@ function AttachInd(ind,sp,start,L=L+2)
 	else
 		state = (ind-1)
 	end
-
 	state = state << 2
 
 	(a,b)=sp
@@ -1074,7 +1076,7 @@ function AttachInd(ind,sp,start,L=L+2)
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
 
-	if (state==0) && iseven(L) && ind==1
+	if (state==0) && iseven(L) && (ind==1)
 		state = 1
 	end
 
@@ -1389,6 +1391,11 @@ function Detach!(C,B)
 		# 	error("bad")
 		# end
 
+		# start = ((ind-1)>>(2*(L+2))) & 3
+		# if start != 0
+		# 	continue
+		# end
+
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
@@ -1399,7 +1406,7 @@ function Detach!(C,B)
 		end
 		s1,s2 = localStatePair(state,L+1,L+2)
 		if s1==Inv!(s2)
-			if (isodd(trailingXs(state,L+2))) # start label is 1
+			if (isodd(trailingXs(state,L+2)) || iseven(L)&&ni==2) # start label is 1
 				if (s1,s2)==sXX
 					# println(stringFromIndex(state,L+2))
 					# println(stringFromIndex(state&(4^L-1),L))
@@ -1518,44 +1525,49 @@ println(real(ex))
 # # str = "000"
 # # ind = indexFromString(str,inL)
 #
-# for ind = 1 : 4^(L+3)*(L+2)
-#
-# 	inL = L+2
-# 	edgeState = longEdgeState_
-# 	flag = longFlag_
-#
-# 	if mainFlag(flag,ind,inL)==0
-#
-# 		str = stringFromState(ind-1,inL)
-# 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
-# 		testV = zeros(4^(L+3)*(L+2))
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(flag,ind,inL)==0)
-#
-# 		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
-# 		# testU = zip * testV
-#
-# 		testU = detach * testV
-#
-# 		outL = L
-# 		flag = flag_
-# 		# edgeState = edgeState_
-# 		edgeState = edgeState_
-# 		for i = 1 : 4^L
-# 			if testU[i] != 0
-# 				if mainFlag(flag,i,outL) == 0
-# 					# println(edgeState[ind])
-# 					# println(stringFromState(i-1,outL), " has value ", testU[i])
-# 					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
-# 				# # else
-# 				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
-# 				end
-# 			end
-# 		end
-#
-# 	end
-# end
+for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
+	# if (ind-1)&(4^(L+2)-1) != 1
+	# 	continue
+	# end
+	inL = L+2
+	edgeState = longEdgeState_
+	flag = longFlag_
+
+	if mainFlag(flag,ind,inL)==0
+
+		str = stringFromState(ind-1,inL)
+		println()
+		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
+		testV = zeros(4^(L+3)*(L+2))
+		testV[ind] = 1
+		println("mainFlag: ", mainFlag(flag,ind,inL)==0)
+
+		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
+		# testU = zip * testV
+
+		testU = detach * testV
+
+		outL = L
+		flag = flag_
+		# edgeState = edgeState_
+		edgeState = edgeState_
+		for i = 1 : 4^L
+			# if i != 2
+			# 	continue
+			# end
+			if testU[i] != 0
+				if mainFlag(flag,i,outL) == 0
+					# println(edgeState[ind])
+					# println(stringFromState(i-1,outL), " has value ", testU[i])
+					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
+				# # else
+				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
+				end
+			end
+		end
+
+	end
+end
 #
 #
 
