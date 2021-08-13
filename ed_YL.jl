@@ -727,11 +727,12 @@ end
 
 function stringFromEdgeState(edgeState,L=L)
 	s=""
+	t=edgeRevmapping[(edgeState&7)]
 	for i in 1 : L
 		s*=edgeRevmapping[(edgeState&7)]
 		edgeState>>=3
 	end
-	return s
+	return s*t
 end
 
 
@@ -759,6 +760,15 @@ end
 # # println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
 # println()
 
+# for ind = 1 : 4^(L+1)*L
+# 	if (ind-1)&(4^L-1) == 1
+# 		if mainFlag(flag_,ind) == 0
+# 			println(stringFromState(ind-1,L), " = ", stringFromEdgeState(edgeState_[ind],L))
+# 		else
+# 			println(stringFromState(ind-1,L), " bad")
+# 		end
+# 	end
+# end
 
 #=
 F-symbol stuff
@@ -1104,7 +1114,7 @@ function Attach!(C,B)
 			continue
 		end
 		state = stateFromInd(ind)
-		if (isodd(trailingXs(state))) # start label is 1
+		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = AttachInd(ind,sXX,0)
 			if mainFlag(longFlag_,ni,L+2) != 0
 				println("a ", ind)
@@ -1257,7 +1267,7 @@ function Zip!(C,B,i)
 	for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
 	end
-	for ind = 1 : 4^(L+3)*(L+2)
+	for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
 		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
@@ -1381,7 +1391,7 @@ function Detach!(C,B)
 	for ind = 1 : 4^L
 		C[ind] = 0
 	end
-	for ind = 1 : 4^(L+3)*(L+2)
+	for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
 		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
@@ -1406,7 +1416,7 @@ function Detach!(C,B)
 		end
 		s1,s2 = localStatePair(state,L+1,L+2)
 		if s1==Inv!(s2)
-			if (isodd(trailingXs(state,L+2)) || iseven(L)&&ni==2) # start label is 1
+			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
 				if (s1,s2)==sXX
 					# println(stringFromIndex(state,L+2))
 					# println(stringFromIndex(state&(4^L-1),L))
@@ -1525,51 +1535,80 @@ println(real(ex))
 # # str = "000"
 # # ind = indexFromString(str,inL)
 #
-for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-	# if (ind-1)&(4^(L+2)-1) != 1
-	# 	continue
-	# end
-	inL = L+2
-	edgeState = longEdgeState_
-	flag = longFlag_
 
-	if mainFlag(flag,ind,inL)==0
 
-		str = stringFromState(ind-1,inL)
-		println()
-		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
-		testV = zeros(4^(L+3)*(L+2))
-		testV[ind] = 1
-		println("mainFlag: ", mainFlag(flag,ind,inL)==0)
 
-		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
-		# testU = zip * testV
 
-		testU = detach * testV
 
-		outL = L
-		flag = flag_
-		# edgeState = edgeState_
-		edgeState = edgeState_
-		for i = 1 : 4^L
-			# if i != 2
-			# 	continue
-			# end
-			if testU[i] != 0
-				if mainFlag(flag,i,outL) == 0
-					# println(edgeState[ind])
-					# println(stringFromState(i-1,outL), " has value ", testU[i])
-					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
-				# # else
-				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
-				end
-			end
-		end
-
-	end
-end
+# for ind = 1 : 4^L
+# 	if mainFlag(flag_,ind,L)==0
+# 		str = stringFromState(ind-1,L)
+# 		println()
+# 		println(str, " = ", stringFromEdgeState(edgeState_[ind],L))
+# 		testV = zeros(4^L)
+# 		testV[ind] = 1
+# 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
 #
+# 		testU = attach * testV
+# 		for i = 4^(L+3)+1 : 4^(L+3)*2
+# 			if testU[i] != 0
+# 				if mainFlag(longFlag_,i,L+2) == 0
+# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 				end
+# 			end
+# 		end
+# 	end
+# end
+
+
+
+
+
+# for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
+# 	# if (ind-1)&(4^(L+2)-1) != 1
+# 	# 	continue
+# 	# end
+# 	inL = L+2
+# 	edgeState = longEdgeState_
+# 	flag = longFlag_
 #
+# 	if mainFlag(flag,ind,inL)==0
+#
+# 		str = stringFromState(ind-1,inL)
+# 		println()
+# 		println(str, " = ", stringFromEdgeState(edgeState[ind],inL))
+# 		testV = zeros(4^(L+3)*(L+2))
+# 		testV[ind] = 1
+# 		println("mainFlag: ", mainFlag(flag,ind,inL)==0)
+#
+# 		# global zip = LinearMap((C,B)->Zip!(C,B,1,longZ3Flag_),4^(L+2),ismutating=true,issymmetric=false,isposdef=false)
+# 		# testU = zip * testV
+#
+# 		testU = detach * testV
+#
+# 		outL = L
+# 		flag = flag_
+# 		# edgeState = edgeState_
+# 		edgeState = edgeState_
+# 		for i = 1 : 4^L
+# 			# if i != 2
+# 			# 	continue
+# 			# end
+# 			if testU[i] != 0
+# 				if mainFlag(flag,i,outL) == 0
+# 					# println(edgeState[ind])
+# 					# println(stringFromState(i-1,outL), " has value ", testU[i])
+# 					println(stringFromState(i-1,outL), " = ", stringFromEdgeState(edgeState[i],outL), " has value ", testU[i])
+# 				# # else
+# 				# 	println("bad flag: ", ind, " = ", stringFromIndex(ind,outL))
+# 				end
+# 			end
+# 		end
+#
+# 	end
+# end
+
+
 
 # println()
 # smallH = Matrix(diagm(e))
