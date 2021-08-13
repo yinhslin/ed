@@ -1,7 +1,7 @@
 using LinearAlgebra,LinearMaps
 using Arpack
 
-const L=4
+const L=6
 # const N=6
 
 #=
@@ -1223,6 +1223,33 @@ end
 # println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
 # println(stringFromState(ZipInd(state+1,sPM)-1,L+2), " = ", stringFromEdgeState(EdgeState!(ZipInd(state+1,sPM),longFlag_,L+2),L+2))
 
+function nextEdge!(e,s,below=false)
+	if e<4
+		if s==0
+			if below
+				return 4+((4-e)%3)
+			else
+				return e+3
+			end
+		else
+			# return 1+((e+s-2)%3)
+			# println(e,s,below)
+			# error("not allowed")
+			return false
+		end
+	else
+		if s==0
+			if below
+				return 1+((7-e)%3)
+			else
+				return e-3
+			end
+		else
+			return 4+((e+s-2)%3)
+		end
+	end
+end
+
 function Zip!(C,B,i)
 	for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
@@ -1232,7 +1259,7 @@ function Zip!(C,B,i)
 			continue
 		end
 		# z3 = (longZ3Flag[ind] >> 2*(i-1)) & 3
-		# state = stateFromInd(ind,L+2)
+
 		es = longEdgeState_[ind]
 		j = i
 		e1 = (es>>(3*(j-1)))&7
@@ -1251,18 +1278,43 @@ function Zip!(C,B,i)
 		# 	println(localStatePair(state,3,L+2))
 		# 	println()
 		# end
+
+		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
+
+		# println(s1,s2)
+		# println(stringFromState(ind-1,L+2), " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
+		if (e2 != nextEdge!(e1,s1,true) || e3 != nextEdge!(e2,s2,false))
+			error("inconsistent edges")
+		end
 		for s3 = 0 : 3
+			e4 = nextEdge!(e1,s3,false)
+			if e4 == false
+				continue
+			end
 			for s4 = 0 : 3
-				if e1==1
-					e4=e1+3
-				else
-					if s3==0
-						e4=e1-3
-					else
-						e4=4+((e1+s3-2)%3)
-					end
+				if (e3 != nextEdge!(e4,s4,true))
+					# error("haha")
+					continue
 				end
+				# if e1<4
+				# 	# if s3 != 0
+				# 	# 	error("here")
+				# 	# end
+				# 	if s3 != 0
+				# 		continue
+				# 	end
+				# 	e4=e1+3
+				# else
+				# 	if s3==0
+				# 		e4=e1-3
+				# 	else
+				# 		e4=4+((e1+s3-2)%3)
+				# 	end
+				# end
+				# if e4 != e4x
+				# 	error("xxx")
+				# end
 				ni = ZipInd(ind,(s3,s4))
 				if mainFlag(longFlag_,ni,L+2)!=0 || FSymbol!(4,e1,4,e3,e2,e4)==0
 					continue
@@ -1449,16 +1501,13 @@ for i = 1 : 4^L
 		global mat = hcat(mat,g)
 	end
 end
-# mat = mat[2:size(mat,2)]
+mat = mat[:,2:end]
 
-ρ = adjoint(mat) * ρ * mat
+# ρ = adjoint(mat) * ρ * mat
+# println(size(ρ))
+# ex,vx = eigen(Matrix(ρ))
+# println(real(ex))
 
-println(size(ρ))
-
-e,v = eigen(Matrix(ρ))
-println(real(e))
-
-# # println(Matrix(ρ))
 #
 #
 # # edgeState = longEdgeState_
@@ -1509,20 +1558,26 @@ println(real(e))
 #
 #
 
-# println()
-# smallH = Matrix(diagm(e))
-# smallT = Matrix(adjoint(v)*T*v)
-# smallρ = Matrix(adjoint(v)*ρ*v)
-# smalle,smallv = eigen(smallH+smallT+smallρ)
-# Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# Ts = diag(adjoint(smallv)*smallT*smallv)
-# Ps = real(map(log,Ts)/(2*π*im))*L
-# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-# HPρs = hcat(Hs,Ps,ρs)
-# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+println()
+smallH = Matrix(diagm(e))
+smallT = Matrix(adjoint(v)*T*v)
+smallρ = Matrix(adjoint(v)*ρ*v)
+smalle,smallv = eigen(smallH+smallT+smallρ)
+
+Hs = real(diag(adjoint(smallv)*smallH*smallv))
+Ts = diag(adjoint(smallv)*smallT*smallv)
+Ps = real(map(log,Ts)/(2*π*im))*L
+ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+HPρs = hcat(Hs,Ps,ρs)
+HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+s=""
+s*=string(HPρs[1][1])
+print(MathematicaMatrix(HPρs))
+
+# HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
 # s=""
-# s*=string(HPρs[1][1])
-# print(MathematicaMatrix(HPρs))
+# s*=string(HPs[1][1])
+# print(MathematicaMatrix(HPs))
 
 #
 #
