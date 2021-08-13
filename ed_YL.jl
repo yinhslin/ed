@@ -835,7 +835,7 @@ function FSymbol!(i,j,k,l,m,n)
 	if m!=4
 		return FSymbol!(4, 4, 4, l, 4, Add!(n,m-4))
 	end
-	if i==j==k==l==4 && !(IsInvertible!(m)) && !(IsInvertible!(n))
+	if i==j==k==m==4 && !(IsInvertible!(l)) && !(IsInvertible!(n))
 		if l+n==8
 			return x
 		elseif l+n==9
@@ -848,6 +848,7 @@ function FSymbol!(i,j,k,l,m,n)
 			return y1
 		end
 	end
+	println(i,j,k,l,m,n)
 	error("FSymbol not found")
 end
 
@@ -1104,7 +1105,7 @@ function Attach!(C,B)
 		C[ind] = 0
 	end
 	for ind = 1 : 4^L
-		if mainFlag(flag_,ind,L) != 0
+		if B[ind] == 0 || mainFlag(flag_,ind,L) != 0
 			continue
 		end
 		state = stateFromInd(ind)
@@ -1216,7 +1217,6 @@ function ZipInd(ind,sp,L=L+2)
 end
 
 state = stateFromString("yxxx-_1",L+2)
-# println(flag!(state+1,L+2) >> (L+4))
 println(mainFlag(longFlag_,state+1,L+2)==0)
 println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
 println(stringFromState(ZipInd(state+1,sPM)-1,L+2), " = ", stringFromEdgeState(EdgeState!(ZipInd(state+1,sPM),longFlag_,L+2),L+2))
@@ -1226,11 +1226,11 @@ function Zip!(C,B,i)
 		C[ind] = 0
 	end
 	for ind = 1 : 4^(L+3)*(L+2)
-		if mainFlag(longFlag_,ind,L+2) != 0
+		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
 		# z3 = (longZ3Flag[ind] >> 2*(i-1)) & 3
-		state = stateFromInd(ind,L+2)
+		# state = stateFromInd(ind,L+2)
 		es = longEdgeState_[ind]
 		j = i
 		e1 = (es>>(3*(j-1)))&7
@@ -1252,7 +1252,6 @@ function Zip!(C,B,i)
 		s1,s2 = localStatePair(state,i,L+2)
 		for s3 = 0 : 3
 			for s4 = 0 : 3
-
 				if e1==1
 					e4=e1+3
 				else
@@ -1262,11 +1261,11 @@ function Zip!(C,B,i)
 						e4=4+((e1+s3-2)%3)
 					end
 				end
-
-				ni = ZipInd(state+1,(s3,s4))
+				ni = ZipInd(ind,(s3,s4))
 				if mainFlag(longFlag_,ni,L+2)!=0 && FSymbol!(4,e1,4,e3,e2,e4)!=0
 					continue
 				end
+				println(4,e1,4,e3,e2,e4," = ",FSymbol!(4,e1,4,e3,e2,e4))
 				C[ni] += FSymbol!(4,e1,4,e3,e2,e4) * B[ind]
 				# C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
 			# # if (ind == 4^L)
@@ -1326,7 +1325,7 @@ function Detach!(C,B)
 		C[ind] = 0
 	end
 	for ind = 1 : 4^(L+3)*(L+2)
-		if mainFlag(longFlag_,ind,L+2) != 0
+		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
 			continue
 		end
 		state = stateFromInd(ind,L+2)
@@ -1356,14 +1355,16 @@ function Detach!(C,B)
 	end
 end
 
-# state = stateFromString("y00x0_0",L+2)
+# state = stateFromString("z0xx0_1",L+2)
 # println()
 # println(mainFlag(longFlag_,state+1,L+2)==0)
 # println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
 # B = zeros(4^(L+3)*(L+2))
 # B[state+1] = 1
 # C = zeros(4^(L+3)*(L+2))
-# println(Zip!(C,B,1))
+# Zip!(C,B,1)
+# println(norm(C))
+
 
 detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 
@@ -1385,21 +1386,23 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 
 zip = LinearMap((C,B)->Zip!(C,B,1),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 
-# state = stateFromString("y00x0_0",L+2)
-# println(mainFlag(longFlag_,state+1,L+2)==0)
-# println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
-# testV = zeros(4^(L+3)*(L+2))
-# testV[state+1] = 1
-# testU = zip * testV
-# for i = 1 : 4^(L+3)*(L+2)
-# 	if testU[i] != 0
-# 		if mainFlag(longFlag_,i,L+2) == 0
-# 			println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
-# 		else
-# 			println("bad flag: ", i, " = ", stringFromIndex(i,L+2))
-# 		end
-# 	end
-# end
+state = stateFromString("z0xx0_0",L+2)
+if mainFlag(longFlag_,state+1,L+2)==0
+	println()
+	println(stringFromState(state,L+2), " = ", stringFromEdgeState(EdgeState!(state+1,longFlag_,L+2),L+2))
+	testV = zeros(4^(L+3)*(L+2))
+	testV[state+1] = 1
+	testU = zip * testV
+	for i = 1 : 4^(L+3)*(L+2)
+		if testU[i] != 0
+			if mainFlag(longFlag_,i,L+2) == 0
+				println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+			else
+				println("bad flag: ", i, " = ", stringFromIndex(i,L+2))
+			end
+		end
+	end
+end
 
 # println(stringFromState( Ind(state+1,sMP,1)-1, L+2))
 
