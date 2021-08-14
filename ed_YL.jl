@@ -5,8 +5,7 @@ using Arpack
 using Profile
 using Traceur
 
-const L=6
-# const N=6
+const L=9
 
 #=
 
@@ -41,7 +40,7 @@ My convention is to use
 
 =#
 
-function stateFromString(s::String,L=L)
+function stateFromString(s::String,L::Int64=L)
 	if length(s)!=L+2
 		error("length doesn't match")
 	end
@@ -56,7 +55,7 @@ function stateFromString(s::String,L=L)
 	return a
 end
 
-function stringFromState(state,L=L)
+function stringFromState(state::Int64,L::Int64=L)
 	below = (state>>(2*(L+1)))
 	start = (state>>(2*L)) & 3
 	if iseven(L) && (state&(4^L-1))==1
@@ -86,7 +85,7 @@ function stringFromState(state,L=L)
 	return s
 end
 
-function trailingXs(state,L=L)
+function trailingXs(state::Int64,L::Int64=L)
 	state = state & (4^L-1)
 	i=0
 	while state!=0
@@ -96,7 +95,7 @@ function trailingXs(state,L=L)
 	return L-i
 end
 
-function flag(ind,L=L)
+function flag(ind::Int64,L::Int64=L)
 	f = 0
 	flagshift=L+2
 	state=ind-1
@@ -154,7 +153,7 @@ function flag(ind,L=L)
 	return f
 end
 
-function setFlag!(flag,ind,L=L)
+function setFlag!(flag,ind::Int64,L::Int64=L)
 	flagshift=L+2
 	state=ind-1
 	below=(state>>(2*(L+1)))
@@ -211,12 +210,12 @@ function setFlag!(flag,ind,L=L)
 end
 
 println("preparing flag...")
-flag_ = zeros(Int32,4^(L+1)*L)
+flag_ = zeros(Int64,4^(L+1)*L)
 @time for i = 1 : 4^(L+1)*L
 	setFlag!(flag_,i)
 end
 
-function setLongFlag!(flag,ind,L=L+2)
+function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
 	state=ind-1
 	below=(state>>(2*(L+1)))
 	start=(state>>(2*L))&3
@@ -275,9 +274,13 @@ function setLongFlag!(flag,ind,L=L+2)
 end
 
 println("preparing new long flag...")
+fusionFlag_ = zeros(Bool,4^L)
+for i = 1 : 4^L
+	setFusionFlag!(fusionFlag_,i,L)
+end
 longFlag_ = zeros(Bool,4^(L+3)*(L+2))
 for i = 1 : 4^(L+3)*(L+2)
-	setLongFlag!(longFlag_,i,L+2)
+	setFusionFlag!(longFlag_,i,L+2)
 end
 
 
@@ -310,7 +313,7 @@ const sM0=(3,1)
 const sMP=(3,2)
 const sMM=(3,3)
 
-function stateFromInd(ind,L=L)
+function stateFromInd(ind::Int64,L::Int64=L)
 	state=(ind-1)&(4^L-1)
 	if state==1 && iseven(L)
 		state=0
@@ -318,16 +321,16 @@ function stateFromInd(ind,L=L)
 	return state
 end
 
-function mainFlag(flag,ind,L0=L)::Int32
-	if L0==L
-		flagshift=L+2
-		return (flag[ind] >> flagshift) & 3
-	else
-		return flag[ind]
-	end
+function mainFlag(flag::Vector{Int64},ind::Int64,L::Int64=L)::Int8
+	flagshift=L+2
+	return (flag[ind] >> flagshift) & 3
 end
 
-function nextSite(i,L=L)
+function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Int8
+	return flag[ind]
+end
+
+function nextSite(i,L::Int64=L)
 	j=i+1
 	if j==L+1
 		j=1
@@ -335,7 +338,7 @@ function nextSite(i,L=L)
 	return j
 end
 
-function localStatePair(state,i,L=L)
+function localStatePair(state,i,L::Int64=L)
 	j = nextSite(i,L)
 	a = (state >> (2*(i-1))) & 3
 	b = (state >> (2*(j-1))) & 3
@@ -471,7 +474,7 @@ println(sort(e))
 
 
 # Translation (lattice shift)
-function Tind(ind,L,right)
+function Tind(ind::Int64,L,right::Bool)
 	if ind==2 && iseven(L)
 		return 1
 	end
@@ -486,7 +489,7 @@ function Tind(ind,L,right)
 	end
 end
 
-function Tfunc!(C,B,L=L,right=true)
+function Tfunc!(C,B,L::Int64=L,right=true)
 	for ind = 1 : 4^L
 		C[ind] = B[Tind(ind,L,right)]
 	end
@@ -543,9 +546,9 @@ Edge state stuff
 const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
 const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
 
-function setEdgeState!(edgeState,ind,flag,L)
-	below = ((ind-1)>>(2*(L+1)))
-	start = ((ind-1)>>(2*L)) & 3
+function setEdgeState!(edgeState::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
+	below::Int8 = ((ind-1)>>(2*(L+1)))
+	start::Int8 = ((ind-1)>>(2*L)) & 3
 	state = (ind-1)&(4^L-1)
 	evenxs=iseven(trailingXs(state,L))
 	if(state==1 && iseven(L))
@@ -558,8 +561,8 @@ function setEdgeState!(edgeState,ind,flag,L)
 	else
 		edgeState[ind] |= 1+start
 	end
-	for pos = 0 : L-2
-		a=(state >> (2*pos)) & 3
+	for pos::Int8 = 0 : L-2
+		a::Int8=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
 			if ((pos+1)==below || (below!=0 && pos==L-1))
@@ -618,7 +621,7 @@ function edgeState!(ind,flag,L)
 	return es
 end
 
-function stringFromEdgeState(edgeState,L=L)
+function stringFromEdgeState(edgeState,L::Int64=L)
 	s=""
 	t=edgeRevmapping[(edgeState&7)]
 	for i in 1 : L
@@ -628,11 +631,21 @@ function stringFromEdgeState(edgeState,L=L)
 	return s*t
 end
 
+function test()
+	longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
+	for i = 1 : 4^(L+3)*(L+2)
+		setEdgeState!(longEdgeState_,i,longFlag_,L+2)
+	end
+end
+
+@time test()
+
 edgeState_ = zeros(Int64,4^(L+1)*L)
+
 # revEdgeState_ = zeros(Int64,8^L)
 println("preparing edge state...")
 for i = 1 : 4^(L+1)*L
-	setEdgeState!(edgeState_,i,flag_,L)
+	setEdgeState!(edgeState_,i,fusionFlag_,L)
 end
 
 longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
@@ -759,7 +772,7 @@ function inv(s)
 	end
 end
 
-function attachInd(ind,sp,start,L=L+2)
+function attachInd(ind,sp,start,L::Int64=L+2)
 	if ind==2 && iseven(L)
 		state = 0
 	else
@@ -846,7 +859,7 @@ function attach!(C,B)
 	end
 end
 
-function ZipInd(ind,sp,L=L+2)
+function ZipInd(ind,sp,L::Int64=L+2)
 	below = ((ind-1)>>(2*(L+1)))
 	if below == 0
 		error("no ρ from below")
