@@ -1,7 +1,11 @@
 using LinearAlgebra,LinearMaps
+using SparseArrays
+using ArnoldiMethod
 using Arpack
+using Profile
+using Traceur
 
-const L=2
+const L=6
 # const N=6
 
 #=
@@ -149,8 +153,6 @@ end
 # 	flag[ind] |= tot << flagshift
 # end
 
-flag_ = zeros(Int32,4^(L+1)*L)
-
 function flag!(ind,L=L)
 	f = 0
 	flagshift=L+2
@@ -266,29 +268,96 @@ function setFlag!(flag,ind,L=L)
 	flag[ind] |= tot << flagshift
 end
 
-println("preparing...")
-for i = 1 : 4^(L+1)*L
+println("preparing flag...")
+flag_ = zeros(Int32,4^(L+1)*L)
+@time for i = 1 : 4^(L+1)*L
 	setFlag!(flag_,i)
 	# setFlagYT!(flagYT_,i)
 end
 
+println("preparing long flag...")
 longFlag_ = zeros(Int32,4^(L+3)*(L+2))
-for i = 1 : 4^(L+3)*(L+2)
+@time for i = 1 : 4^(L+3)*(L+2)
 	setFlag!(longFlag_,i,L+2)
 end
 
-println("begin")
-for i = 1 : 4^L
-	if i==4^L
-		j = 1
-	else
-		j = i+1
-	end
-	if (flag_[j] != flag!(j))
-		println(i)
-	end
-end
-println("end")
+# setFlag!(longFlag_,1,L+2)
+
+# function setLongFlag!(flag,ind,L=L+2)
+# 	state=ind-1
+# 	below=(state>>(2*(L+1)))
+# 	start=(state>>(2*L))&3
+# 	state=state&(4^L-1)
+# 	if (start==3) || (below>=L)
+# 		flag[ind] |= 1
+# 		return
+# 	end
+# 	if state==0 && isodd(L)
+# 		flag[ind] |= 1
+# 		return
+# 	end
+# 	evenxs=iseven(trailingXs(state,L))
+# 	tot=start
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		tot%=3
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			# if(evenxs)
+# 			# 	flag[ind] |= 1<<pos
+# 			# end
+# 			evenxs = ! evenxs
+# 			if ((pos+1)==below || (below!=0 && pos==L-1))
+# 				tot = 3-tot
+# 			end
+# 		else
+# 			if(!evenxs)
+# 				# not allowed
+# 				flag[ind] |= 1
+# 				return
+# 			end
+# 			if a==2
+# 				tot+=1
+# 			elseif a==3
+# 				tot+=2
+# 			end
+# 		end
+# 	end
+# 	tot=tot-start # compare with start
+# 	if tot<0
+# 		tot+=3
+# 	end
+# 	tot%=3
+# 	if state==0 && isodd(L)
+# 		flag[ind] |= 1
+# 		return
+# 	end
+# 	if tot!=0
+# 		flag[ind] |= 1
+# 	end
+# end
+#
+# println("preparing new long flag...")
+# newLongFlag_ = zeros(Bool,4^(L+3)*(L+2))
+# @time for i = 1 : 4^(L+3)*(L+2)
+# 	setLongFlag!(newLongFlag_,i,L+2)
+# end
+
+# println("begin")
+# for i = 1 : 4^L
+# 	if i==4^L
+# 		j = 1
+# 	else
+# 		j = i+1
+# 	end
+# 	if (flag_[j] != flag!(j))
+# 		println(i)
+# 	end
+# end
+# println("end")
 
 
 diag_ = zeros(Float64,4^L)
@@ -555,7 +624,7 @@ end
 
 println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=8,which=:SR)
+e,v = eigs(H,nev=1,which=:SR)
 println(sort(e))
 
 
@@ -648,7 +717,7 @@ Edge state stuff
 const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
 const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
 
-function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
+function setEdgeState!(edgeState,ind,flag,L)
 	below = ((ind-1)>>(2*(L+1)))
 	start = ((ind-1)>>(2*L)) & 3
 	state = (ind-1)&(4^L-1)
@@ -682,7 +751,7 @@ function setEdgeState!(edgeState,revEdgeState,ind,flag,L)
 			edgeState[ind] |= ((1+tot) << (3*(pos+1)))
 		end
 	end
-	revEdgeState[edgeState[ind]] = ind
+	# revEdgeState[edgeState[ind]] = ind
 end
 
 
@@ -737,19 +806,18 @@ end
 
 
 edgeState_ = zeros(Int64,4^(L+1)*L)
-revEdgeState_ = zeros(Int64,8^L)
-
-println("preparing...")
+# revEdgeState_ = zeros(Int64,8^L)
+println("preparing edge state...")
 for i = 1 : 4^(L+1)*L
-	setEdgeState!(edgeState_,revEdgeState_,i,flag_,L)
+	setEdgeState!(edgeState_,i,flag_,L)
 end
 
 longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
-longRevEdgeState_ = zeros(Int64,8^(L+2))
+# longRevEdgeState_ = zeros(Int64,8^(L+2))
 
-println("preparing...")
+println("preparing long edge state...")
 for i = 1 : 4^(L+3)*(L+2)
-	setEdgeState!(longEdgeState_,longRevEdgeState_,i,longFlag_,L+2)
+	setEdgeState!(longEdgeState_,i,longFlag_,L+2)
 end
 
 # state = stateFromString("xy0xx-_2",L)
@@ -1302,7 +1370,7 @@ function Zip!(C,B,i)
 		end
 		for s3 = 0 : 3
 			e4 = nextEdge!(e1,s3,false)
-			println("e4: ", e4)
+			# println("e4: ", e4)
 			if e4 == false
 				continue
 			end
@@ -1333,9 +1401,9 @@ function Zip!(C,B,i)
 				if mainFlag(longFlag_,ni,L+2)!=0 || FSymbol!(4,e1,4,e3,e2,e4)==0
 					continue
 				end
-				println("s4: ", s4)
-				println("ind: ", stringFromEdgeState(longEdgeState_[ind],L+2))
-				println("ni: ", stringFromEdgeState(longEdgeState_[ni],L+2))
+				# println("s4: ", s4)
+				# println("ind: ", stringFromEdgeState(longEdgeState_[ind],L+2))
+				# println("ni: ", stringFromEdgeState(longEdgeState_[ni],L+2))
 				# println(4,e1,4,e3,e2,e4," = ",FSymbol!(4,e1,4,e3,e2,e4))
 				C[ni] += FSymbol!(4,e1,4,e3,e2,e4) * B[ind]
 				# C[ni] += ZipF!(z3,s1,s2,s3,s4) * B[ind]
@@ -1525,10 +1593,10 @@ for i = 1 : 4^L
 end
 mat = mat[:,2:end]
 
-ρx = adjoint(mat) * ρ * mat
-println(size(ρx))
-ex,vx = eigen(Matrix(ρx))
-println(real(ex))
+# ρx = adjoint(mat) * ρ * mat
+# println(size(ρx))
+# ex,vx = eigen(Matrix(ρx))
+# println(real(ex))
 
 #
 #
@@ -1608,43 +1676,43 @@ println(real(ex))
 
 
 
-zip = LinearMap((C,B)->Zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
-for ind = 4^(L+3)+1 : 4^(L+3)*(L+2)
-	# if mainFlag(longFlag_,ind,L+2)==0 && ind==1045
-	if mainFlag(longFlag_,ind,L+2)==0 && ind==2069
-		str = stringFromState(ind-1,L+2)
-		println()
-		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
-		testV = zeros(4^(L+3)*(L+2))
-		testV[ind] = 1
-		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
+# zip = LinearMap((C,B)->Zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+# for ind = 4^(L+3)+1 : 4^(L+3)*(L+2)
+# 	# if mainFlag(longFlag_,ind,L+2)==0 && ind==1045
+# 	if mainFlag(longFlag_,ind,L+2)==0 && ind==2069
+# 		str = stringFromState(ind-1,L+2)
+# 		println()
+# 		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
+# 		testV = zeros(4^(L+3)*(L+2))
+# 		testV[ind] = 1
+# 		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
+#
+# 		testU = zip * testV
+# 		for i = 4^(L+3)*2+1 : 4^(L+3)*(L+2)
+# 			if testU[i] != 0
+# 				if mainFlag(longFlag_,i,L+2) == 0
+# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 				end
+# 			end
+# 		end
+# 	end
+# end
 
-		testU = zip * testV
-		for i = 4^(L+3)*2+1 : 4^(L+3)*(L+2)
-			if testU[i] != 0
-				if mainFlag(longFlag_,i,L+2) == 0
-					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
-				end
-			end
-		end
-	end
-end
 
-
-# println()
-# smallH = Matrix(diagm(e))
-# smallT = Matrix(adjoint(v)*T*v)
-# smallρ = Matrix(adjoint(v)*ρ*v)
-# smalle,smallv = eigen(smallH+smallT+smallρ)
-# Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-# Ps = real(map(log,Ts)/(2*π*im))*L
-# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-# HPρs = hcat(Hs,Ps,ρs)
-# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-# s=""
-# s*=string(HPρs[1][1])
-# print(MathematicaMatrix(HPρs))
+println()
+smallH = Matrix(diagm(e))
+smallT = Matrix(adjoint(v)*T*v)
+smallρ = Matrix(adjoint(v)*ρ*v)
+smalle,smallv = eigen(smallH+smallT+smallρ)
+Hs = real(diag(adjoint(smallv)*smallH*smallv))
+Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+Ps = real(map(log,Ts)/(2*π*im))*L
+ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+HPρs = hcat(Hs,Ps,ρs)
+HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+s=""
+s*=string(HPρs[1][1])
+print(MathematicaMatrix(HPρs))
 
 
 
