@@ -5,7 +5,7 @@ using Arpack
 # using Profile
 # using Traceur
 
-const L=9
+const L=6
 
 #=
 
@@ -592,6 +592,37 @@ function stringFromEdgeState(edgeState::Int64,L::Int64=L)
 	return s*t
 end
 
+function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
+	below = ((ind-1)>>(2*(L+1)))
+	if below==0
+		return
+	end
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	evenxs=iseven(trailingXs(state,L))
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	tot=start
+	for pos = 0 : below-2
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+	end
+	tot%=3
+	if evenxs
+		edgeAtDrapeMapping[ind] = 4+tot
+	else
+		edgeAtDrapeMapping[ind] = 1+tot
+	end
+end
+
 # revEdgeStateMapping_ = zeros(Int64,8^L)
 println()
 println("preparing edge state mapping...")
@@ -600,12 +631,19 @@ edgeStateMapping_ = zeros(Int64,4^(L+1)*L)
 	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
 end
 
+# println()
+# println("preparing extended edge state mapping...")
+# extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
+# # extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
+# @time for i = 1 : 4^(L+3)*(L+2)
+# 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
+# end
+
 println()
-println("preparing extended edge state mapping...")
-extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
-# extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
+println("preparing edge at drape mapping...")
+edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
 @time for i = 1 : 4^(L+3)*(L+2)
-	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
+	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
 end
 
 
@@ -754,9 +792,12 @@ function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
 	return fSymbolMapping_[i+1]
 end
 
+
 #=
 
 Zipper stuff.
+
+TODO Use fusion space basis and encode each linear map as a sparse array.
 
 =#
 
@@ -874,36 +915,32 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 			continue
 		end
 
-		edgeState = extendedEdgeStateMapping_[ind]
-		j = i
-		e1 = (edgeState>>(3*(j-1)))&7
-		j += 1
-		e2 = (edgeState>>(3*(j-1)))&7
-		j += 1
-		e3 = (edgeState>>(3*(j-1)))&7
+		e1 = Int64(edgeAtDrapeMapping_[ind])
+
+		# edgeState = extendedEdgeStateMapping_[ind]
+		# j = i
+		# e1 = (edgeState>>(3*(j-1)))&7
+		# j += 1
+		# e2 = (edgeState>>(3*(j-1)))&7
+		# j += 1
+		# e3 = (edgeState>>(3*(j-1)))&7
 
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
 
-		if (e2 != nextEdge(e1,s1,true) || e3 != nextEdge(e2,s2,false))
-			error("inconsistent edges")
-		end
+		# if (e2 != nextEdge(e1,s1,true) || e3 != nextEdge(e2,s2,false))
+		# 	error("inconsistent edges")
+		# end
 		for s3 = 0 : 3
-			e4 = nextEdge(e1,s3,false)
-			if e4 == false
-				continue
-			end
+			# e4 = nextEdge(e1,s3,false)
+			# if e4 == false
+			# 	continue
+			# end
 			for s4 = 0 : 3
-				if (e3 != nextEdge(e4,s4,true))
-					continue
-				end
+				# if (e3 != nextEdge(e4,s4,true))
+				# 	continue
+				# end
 				ni = ZipInd(ind,(s3,s4))
-				if (FSymbolZipper(e1,s1,s2,s3,s4) != FSymbol(4,e1,4,e3,e2,e4))
-					println(e1,s1,s2,s3,s4)
-					println(FSymbolZipper(e1,s1,s2,s3,s4))
-					println(FSymbol(4,e1,4,e3,e2,e4))
-					error("")
-				end
 				if mainFlag(extendedFusionFlag_,ni,L+2)!=0 || FSymbolZipper(e1,s1,s2,s3,s4)==0
 					# FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
@@ -954,6 +991,7 @@ for i = 1 : L
 end
 ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 
+# TODO Is there more efficient way than converting to Matrix and then eigen?
 println()
 println("diagonalizing H,T,ρ...")
 smallH = Matrix(diagm(e))
