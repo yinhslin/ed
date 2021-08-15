@@ -604,26 +604,11 @@ extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
 end
 
-# state = stateFromString("xy0xx-_2",L)
-# println()
-# # println(bitstring(ind))
-# println(stringFromState(state,L))
-# println(stringFromEdgeState(edgeStateMapping_[state+1],L))
-# # println(stringFromEdgeState(EdgeStateMapping!(state+1,flag_,L),L))
-# println()
-
-# for ind = 1 : 4^(L+1)*L
-# 	if (ind-1)&(4^L-1) == 1
-# 		if mainFlag(flag_,ind) == 0
-# 			println(stringFromState(ind-1,L), " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
-# 		else
-# 			println(stringFromState(ind-1,L), " bad")
-# 		end
-# 	end
-# end
 
 #=
-F-symbol stuff
+
+F-symbol stuff.
+
 =#
 
 function isInvertible(i::Int64)
@@ -709,6 +694,13 @@ function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
 	error("FSymbol not found")
 end
 
+
+#=
+
+Zipper stuff.
+
+=#
+
 # Inverse of index: x->x, 0->0, ±->∓
 function inv(ind::Int64)
 	if ind==2
@@ -757,37 +749,30 @@ function attach!(C::Vector{Float64},B::Vector{Float64})
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = attachInd(ind,sXX,0)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				println("a ", ind)
 				error("disallowed state")
 			end
 			C[ni] += B[ind]
 		else
 			ni = attachInd(ind,sXX,0)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				println("b ",ind)
-				println(flag(ni,L+2))
-				println(extendedFusionFlag_[ni])
 				error("disallowed state")
 			end
 			C[ni] += 1/ζ * B[ind]
 			# ni = newInd(state,L+2,s00,0,0,L+2)
 			ni = attachInd(ind,s00,0)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				println("c ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sPM,0,1,L+2)
 			ni = attachInd(ind,sPM,1)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				println("d ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sMP,0,2,L+2)
 			ni = attachInd(ind,sMP,2)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				println("e ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
@@ -929,105 +914,6 @@ for i = 1 : L
 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 end
 ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-
-# mat = zeros(Bool,4^L)
-# for i = 1 : 4^L
-# 	if mainFlag(flag_,i) == 0
-# 		g = zeros(Bool,4^L)
-# 		g[i] = 1
-# 		global mat = hcat(mat,g)
-# 	end
-# end
-# mat = mat[:,2:end]
-# ρx = adjoint(mat) * ρ * mat
-# println(size(ρx))
-# ex,vx = eigen(Matrix(ρx))
-# println(real(ex))
-
-# for ind = 1 : 4^L
-# 	if mainFlag(flag_,ind,L)==0
-# 		str = stringFromState(ind-1,L)
-# 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
-# 		testV = zeros(4^L)
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
-#
-# 		testU = ρ * testV
-# 		for i = 1 : 4^L
-# 			if testU[i] != 0
-# 				if mainFlag(flag_,i,L) == 0
-# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeStateMapping_[i],L), " has value ", testU[i])
-# 				end
-# 			end
-# 		end
-# 	end
-# end
-
-
-# for ind = 1 : 4^L
-# 	if mainFlag(flag_,ind,L)==0
-# 		str = stringFromState(ind-1,L)
-# 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
-# 		testV = zeros(4^L)
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
-#
-# 		testU = attach * testV
-# 		for i = 4^(L+3)+1 : 4^(L+3)*2
-# 			if testU[i] != 0
-# 				if mainFlag(extendedFusionFlag_,i,L+2) == 0
-# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(extendedEdgeStateMapping_[i],L+2), " has value ", testU[i])
-# 				end
-# 			end
-# 		end
-# 	end
-# end
-
-# for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-# 	if mainFlag(extendedFusionFlag_,ind,L+2)==0
-# 		str = stringFromState(ind-1,L+2)
-# 		println()
-# 		println(str, " = ", stringFromEdgeState(extendedEdgeStateMapping_[ind],L+2))
-# 		testV = zeros(4^(L+3)*(L+2))
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(extendedFusionFlag_,ind,L+2)==0)
-#
-# 		testU = detach * testV
-# 		for i = 1 : 4^L
-# 			if testU[i] != 0
-# 				if mainFlag(flag_,i,L) == 0
-# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeStateMapping_[i],L), " has value ", testU[i])
-# 				end
-# 			end
-# 		end
-# 	end
-# end
-
-
-
-# zip = LinearMap((C,B)->zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
-# for ind = 4^(L+3)+1 : 4^(L+3)*(L+2)
-# 	# if mainFlag(extendedFusionFlag_,ind,L+2)==0 && ind==1045
-# 	if mainFlag(extendedFusionFlag_,ind,L+2)==0 && ind==2069
-# 		str = stringFromState(ind-1,L+2)
-# 		println()
-# 		println(str, " = ", stringFromEdgeState(extendedEdgeStateMapping_[ind],L+2))
-# 		testV = zeros(4^(L+3)*(L+2))
-# 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(extendedFusionFlag_,ind,L+2)==0)
-#
-# 		testU = zip * testV
-# 		for i = 4^(L+3)*2+1 : 4^(L+3)*(L+2)
-# 			if testU[i] != 0
-# 				if mainFlag(extendedFusionFlag_,i,L+2) == 0
-# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(extendedEdgeStateMapping_[i],L+2), " has value ", testU[i])
-# 				end
-# 			end
-# 		end
-# 	end
-# end
 
 println()
 smallH = Matrix(diagm(e))
