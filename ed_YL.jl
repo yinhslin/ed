@@ -2,10 +2,10 @@ using LinearAlgebra,LinearMaps
 using SparseArrays
 using ArnoldiMethod
 using Arpack
-using Profile
-using Traceur
+# using Profile
+# using Traceur
 
-const L=6
+const L=10
 
 #=
 
@@ -376,7 +376,7 @@ end
 
 println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=1,which=:SR)
+@time e,v = eigs(H,nev=8,which=:SR)
 println(sort(e))
 
 
