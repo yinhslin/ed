@@ -367,16 +367,17 @@ function Hfunc!(C::Hairetsu,B::Hairetsu,diag::Vector{Float64},flag::Vector{Int64
 	end
 end
 
+println()
 println("preparing...")
 @time for i = 1 : 4^L
 	setFlag!(flag_,i)
 	computeDiag!(diag_,flag_,i)
 end
 
-
+println()
 println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=8,which=:SR)
+@time e,v = eigs(H,nev=1,which=:SR)
 println(sort(e))
 
 
@@ -439,6 +440,7 @@ Simultaneously diagonalize Hamiltonian and translation.
 Output sorted pairs of energy and momentum.
 =#
 println()
+println("diagonalizing H,T...")
 smallH = Matrix(diagm(e))
 smallT = Matrix(adjoint(v)*T*v)
 smalle,smallv = eigen(smallH+smallT)
@@ -591,12 +593,14 @@ function stringFromEdgeState(edgeState::Int64,L::Int64=L)
 end
 
 # revEdgeStateMapping_ = zeros(Int64,8^L)
+println()
 println("preparing edge state mapping...")
 edgeStateMapping_ = zeros(Int64,4^(L+1)*L)
 @time for i = 1 : 4^(L+1)*L
 	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
 end
 
+println()
 println("preparing extended edge state mapping...")
 extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
 # extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
@@ -694,6 +698,61 @@ function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
 	error("FSymbol not found")
 end
 
+function nextEdge(e::Int64,s::Int64,below::Bool=false)
+	if e<4
+		if s==0
+			if below
+				return 4+((4-e)%3)
+			else
+				return e+3
+			end
+		else
+			return false
+		end
+	else
+		if s==0
+			if below
+				return 1+((7-e)%3)
+			else
+				return e-3
+			end
+		else
+			return 4+((e+s-2)%3)
+		end
+	end
+end
+
+fSymbolMapping_ = zeros(Float64, 1536)
+
+for e1 = 1 : 6
+	for s1 = 0 : 3
+		for s2 = 0 : 3
+			for s3 = 0 : 3
+				for s4 = 0 : 3
+					i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
+					e2 = nextEdge(e1,s1,true)
+					if e2 == 0
+						continue
+					end
+					e3 = nextEdge(e2,s2,false)
+					if e3 == 0
+						continue
+					end
+					e4 = nextEdge(e1,s3,false)
+					if e4 == 0 || e3 != nextEdge(e4,s4,true)
+						continue
+					end
+					fSymbolMapping_[i+1] = FSymbol(4,e1,4,e3,e2,e4)
+				end
+			end
+		end
+	end
+end
+
+function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
+	i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
+	return fSymbolMapping_[i+1]
+end
 
 #=
 
@@ -758,19 +817,16 @@ function attach!(C::Vector{Float64},B::Vector{Float64})
 				error("disallowed state")
 			end
 			C[ni] += 1/ζ * B[ind]
-			# ni = newInd(state,L+2,s00,0,0,L+2)
 			ni = attachInd(ind,s00,0)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
-			# ni = newInd(state,L+2,sPM,0,1,L+2)
 			ni = attachInd(ind,sPM,1)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
-			# ni = newInd(state,L+2,sMP,0,2,L+2)
 			ni = attachInd(ind,sMP,2)
 			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				error("disallowed state")
@@ -809,30 +865,6 @@ function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-function nextEdge(e::Int64,s::Int64,below::Bool=false)
-	if e<4
-		if s==0
-			if below
-				return 4+((4-e)%3)
-			else
-				return e+3
-			end
-		else
-			return false
-		end
-	else
-		if s==0
-			if below
-				return 1+((7-e)%3)
-			else
-				return e-3
-			end
-		else
-			return 4+((e+s-2)%3)
-		end
-	end
-end
-
 function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
@@ -866,10 +898,17 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 					continue
 				end
 				ni = ZipInd(ind,(s3,s4))
-				if mainFlag(extendedFusionFlag_,ni,L+2)!=0 || FSymbol(4,e1,4,e3,e2,e4)==0
+				if (FSymbolZipper(e1,s1,s2,s3,s4) != FSymbol(4,e1,4,e3,e2,e4))
+					println(e1,s1,s2,s3,s4)
+					println(FSymbolZipper(e1,s1,s2,s3,s4))
+					println(FSymbol(4,e1,4,e3,e2,e4))
+					error("")
+				end
+				if mainFlag(extendedFusionFlag_,ni,L+2)!=0 || FSymbolZipper(e1,s1,s2,s3,s4)==0
+					# FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
 				end
-				C[ni] += FSymbol(4,e1,4,e3,e2,e4) * B[ind]
+				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[ind]
 			end
 		end
 	end
@@ -916,6 +955,7 @@ end
 ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 
 println()
+println("diagonalizing H,T,ρ...")
 smallH = Matrix(diagm(e))
 smallT = Matrix(adjoint(v)*T*v)
 smallρ = Matrix(adjoint(v)*ρ*v)
