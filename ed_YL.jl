@@ -5,7 +5,7 @@ using Arpack
 # using Profile
 # using Traceur
 
-const L=10
+const L=9
 
 #=
 
