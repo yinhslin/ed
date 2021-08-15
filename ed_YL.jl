@@ -5,7 +5,22 @@ using Arpack
 using Profile
 using Traceur
 
-const L=9
+const L=6
+
+#=
+
+NOTE To facilitate the code, I always specify the variable types for functions.
+
+The following types are used:
+	Bool for anything binary contained in a vector.
+		e.g. fusion flag where 0 indicates allowed and 1 disallowed.
+	Int8 for anything constant or linear in L contained in a vector.
+		e.g. i, pos.
+	Int64 for everything else, including variables exponential in L.
+		e.g. state, ind, flag, edgeState.
+		edgeState assigns one byte for each site, so Int128 needed if L>21.
+
+=#
 
 #=
 
@@ -15,18 +30,14 @@ As Julia's array is 1-based, I use
 
 as the array index.
 
-"state" is what you obtain by encoding edge labels using the following mapping,
+"state" is what you obtain by encoding vertex labels using the following mapping,
 and takes the values 0 ...  4^L-1.
-
-I have decided to change to ind = state + 1.
-"state" now has two meanings, either that defined above, or with additional
-information about start label and below position.
 
 =#
 
+# y, z, p, m are x, 0, +, - but with ρ draped below at that vertex
 const mapping=Dict('x'=>0, '0'=>1, '+'=>2, '-'=>3, 'y'=>0, 'z'=>1, 'p'=>2, 'm'=>3)
 const revmapping=Dict(0=>'x', 1=>'0', 2=>'+', 3=>'-')
-const startMapping=Dict('0'=>0, '1'=>1, '2'=>2)
 
 #=
 
@@ -38,13 +49,29 @@ My convention is to use
 	ind == 4^L  for "x....x" with ρ as the start label
 	ind == 1  for "x....x" with 1 as the start label
 
+NOTE For use in zipper, state has two extra bits to encode the start label,
+and ~log(L) extra bits to encode the position where ρ is draped below.
+	e.g. "x....x" with aρ as the start label and where third x is draped below
+		has state with bitstring 0...011010....0 meaning
+		0...011   01   0....0
+		draped  start  x....x
+
+Now state has two meanings, either with the start/draped info or without.
+TODO It is better to use different variable names to distinguish the two.
+NOTE I have also decided to change the relation between ind and state to
+	ind = state + 1
+so that it is less awkward incorporating the extra bits for start/draped.
+
 =#
 
 function stateFromString(s::String,L::Int64=L)
-	if length(s)!=L+2
+	if length(s)!=L || length(s)!=L+2
 		error("length doesn't match")
 	end
-	start=startMapping[s[L+2]]
+	if length(s)==L
+		s = s*"_0"
+	end
+	start=Int64(s[L+2])
 	a=start<<(2*L)
 	for i in L : -1 : 1
 		if s[i] in ['y','z','p','m']
@@ -85,6 +112,10 @@ function stringFromState(state::Int64,L::Int64=L)
 	return s
 end
 
+#=
+TODO trailingXs is always used to infer whether start label is type 1 or ρ.
+Might as well define a function that also checks whether state is 1 when L even.
+=#
 function trailingXs(state::Int64,L::Int64=L)
 	state = state & (4^L-1)
 	i=0
@@ -95,65 +126,18 @@ function trailingXs(state::Int64,L::Int64=L)
 	return L-i
 end
 
-function flag(ind::Int64,L::Int64=L)
-	f = 0
-	flagshift=L+2
-	state=ind-1
-	below=(state>>(2*(L+1)))
-	start=(state>>(2*L))&3
-	state=state&(4^L-1)
-	if (start==3) || (below>=L)
-		f |= 3 << flagshift
-		return f
-	end
-	if state==0 && isodd(L)
-		f |= 3 << flagshift
-		return f
-	end
-	evenxs=iseven(trailingXs(state,L))
-	tot=start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		tot%=3
-		a=(state >> (2*pos)) & 3
-		if a==0
-			if(evenxs)
-				f |= 1<<pos
-			end
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		else
-			if(!evenxs)
-				# not allowed
-				f |= 3 << flagshift
-				return f
-			end
-			if a==2
-				tot+=1
-			elseif a==3
-				tot+=2
-			end
-		end
-	end
-	tot=tot-start
-	if tot<0
-		tot+=3
-	end
-	tot%=3
-	if state==0 && isodd(L)
-		f |= 3 << flagshift
-		return f
-	end
-	f |= tot << flagshift
-	return f
-end
+# Changed to Int64 since Int32 will not be enough even for L=15.
+flag_ = zeros(Int64,4^L)
 
-function setFlag!(flag,ind::Int64,L::Int64=L)
+#=
+
+Modified to allow for nontrivial start/draped used in the zipper.
+
+But zipper only cares about the main flag, which is computed by setFusionFlag!,
+so might as well keep Yuji's original definition.
+
+=#
+function setFlag!(flag::Vector{Int64},ind::Int64,L::Int64=L)
 	flagshift=L+2
 	state=ind-1
 	below=(state>>(2*(L+1)))
@@ -197,7 +181,7 @@ function setFlag!(flag,ind::Int64,L::Int64=L)
 			end
 		end
 	end
-	tot=tot-start # compare with start
+	tot=tot-start
 	if tot<0
 		tot+=3
 	end
@@ -209,81 +193,6 @@ function setFlag!(flag,ind::Int64,L::Int64=L)
 	flag[ind] |= tot << flagshift
 end
 
-println("preparing flag...")
-flag_ = zeros(Int64,4^(L+1)*L)
-@time for i = 1 : 4^(L+1)*L
-	setFlag!(flag_,i)
-end
-
-function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
-	state=ind-1
-	below=(state>>(2*(L+1)))
-	start=(state>>(2*L))&3
-	state=state&(4^L-1)
-	if (start==3) || (below>=L)
-		flag[ind] = true
-		return
-	end
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	evenxs=iseven(trailingXs(state,L))
-	tot=start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-
-	for pos = 0 : L-1
-		tot%=3
-		a=(state >> (2*pos)) & 3
-		if a==0
-			# if(evenxs)
-			# 	flag[ind] |= 1<<pos
-			# end
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		else
-			if(!evenxs)
-				# not allowed
-				flag[ind] = true
-				return
-			end
-			if a==2
-				tot+=1
-			elseif a==3
-				tot+=2
-			end
-		end
-	end
-	tot=tot-start # compare with start
-	if tot<0
-		tot+=3
-	end
-	tot%=3
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	if tot!=0
-		flag[ind] = true
-	end
-end
-
-println("preparing new long flag...")
-fusionFlag_ = zeros(Bool,4^L)
-for i = 1 : 4^L
-	setFusionFlag!(fusionFlag_,i,L)
-end
-longFlag_ = zeros(Bool,4^(L+3)*(L+2))
-for i = 1 : 4^(L+3)*(L+2)
-	setFusionFlag!(longFlag_,i,L+2)
-end
-
-
 diag_ = zeros(Float64,4^L)
 
 const U = 10	# suppression factor for forbidden state
@@ -294,7 +203,6 @@ const x = (2-√(13))/3
 const z = (1+√(13))/6
 const y1 = (5-√(13) - √(6+6*√(13)))/12
 const y2 = (5-√(13) + √(6+6*√(13)))/12
-
 
 const sXX=(0,0)
 const sX0=(0,1)
@@ -326,11 +234,7 @@ function mainFlag(flag::Vector{Int64},ind::Int64,L::Int64=L)::Int8
 	return (flag[ind] >> flagshift) & 3
 end
 
-function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Int8
-	return flag[ind]
-end
-
-function nextSite(i,L::Int64=L)
+function nextSite(i::Int64,L::Int64=L)
 	j=i+1
 	if j==L+1
 		j=1
@@ -338,18 +242,18 @@ function nextSite(i,L::Int64=L)
 	return j
 end
 
-function localStatePair(state,i,L::Int64=L)
+function localStatePair(state::Int64,i::Int64,L::Int64=L)
 	j = nextSite(i,L)
 	a = (state >> (2*(i-1))) & 3
 	b = (state >> (2*(j-1))) & 3
 	return a,b
 end
 
-function isρ1ρ(flag,ind,i)
+function isρ1ρ(flag::Vector{Int64},ind::Int64,i::Int64)
 	return ((flag[ind] >> (i-1)) & 1) == 1
 end
 
-function computeDiag!(diag,flag,ind)
+function computeDiag!(diag::Vector{Float64},flag::Vector{Int64},ind::Int64)
 	state=stateFromInd(ind)
 	fl = mainFlag(flag,ind)
 	if fl==3
@@ -390,7 +294,7 @@ function computeDiag!(diag,flag,ind)
 	end
 end
 
-function newInd(state,i,sp)
+function newInd(state::Int64,i::Int64,sp::Tuple{Int64, Int64})
 	(a,b)=sp
 
 	state &= ~(3<<(2*(i-1)))
@@ -411,7 +315,9 @@ function newInd(state,i,sp)
 	end
 end
 
-function Hfunc!(C,B,diag,flag)
+const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}
+
+function Hfunc!(C::Hairetsu,B::Hairetsu,diag::Vector{Float64},flag::Vector{Int64})
 	for ind = 1 : 4^L
 		C[ind] = diag[ind] * B[ind]
 	end
@@ -462,19 +368,25 @@ function Hfunc!(C,B,diag,flag)
 end
 
 println("preparing...")
-for i = 1 : 4^L
+@time for i = 1 : 4^L
 	setFlag!(flag_,i)
 	computeDiag!(diag_,flag_,i)
 end
 
+
 println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-e,v = eigs(H,nev=1,which=:SR)
+@time e,v = eigs(H,nev=1,which=:SR)
 println(sort(e))
 
 
-# Translation (lattice shift)
-function Tind(ind::Int64,L,right::Bool)
+#=
+
+Translation (lattice shift) stuff
+
+=#
+
+function Tind(ind::Int64,L::Int64,right::Bool)
 	if ind==2 && iseven(L)
 		return 1
 	end
@@ -489,7 +401,7 @@ function Tind(ind::Int64,L,right::Bool)
 	end
 end
 
-function Tfunc!(C,B,L::Int64=L,right=true)
+function Tfunc!(C::Vector{Float64},B::Vector{Float64},L::Int64=L,right::Bool=true)
 	for ind = 1 : 4^L
 		C[ind] = B[Tind(ind,L,right)]
 	end
@@ -498,8 +410,8 @@ end
 T=LinearMap((C,B)->Tfunc!(C,B),4^L,ismutating=true,issymmetric=false,isposdef=false)
 
 
-# Print spectrum in mathematica array to reuse mathematica code for making plots
-function mathematicaVector(V)
+# Print as mathematica array to reuse Mathematica code for making plots.
+function mathematicaVector(V::Vector{Float64})
 	s="{"
 	for i = 1:(size(V,1)-1)
 		s*=string(V[i])
@@ -510,7 +422,8 @@ function mathematicaVector(V)
 	return s
 end
 
-function mathematicaMatrix(M)
+# Print as mathematica matrix to reuse Mathematica code for making plots.
+function mathematicaMatrix(M::Vector{Vector{Float64}})
 	s="{\n"
 	for i = 1:(size(M,1)-1)
 		s*=mathematicaVector(M[i])
@@ -522,8 +435,8 @@ function mathematicaMatrix(M)
 end
 
 #=
-Simultaneously diagonalize Hamiltonian and translation
-Output sorted pairs of energy and momentum
+Simultaneously diagonalize Hamiltonian and translation.
+Output sorted pairs of energy and momentum.
 =#
 println()
 smallH = Matrix(diagm(e))
@@ -536,55 +449,101 @@ HPs = hcat(Hs,Ps)
 HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
 s=""
 s*=string(HPs[1][1])
-print(mathematicaMatrix(HPs))
-
+println(mathematicaMatrix(HPs))
 
 #=
-Edge state stuff
+A fusionFlag retains the information of whether main flag is 0 to save memory.
 =#
-
-const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
-const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
-
-function setEdgeState!(edgeState::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
-	below::Int8 = ((ind-1)>>(2*(L+1)))
-	start::Int8 = ((ind-1)>>(2*L)) & 3
-	state = (ind-1)&(4^L-1)
+function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
+	state=ind-1
+	below=(state>>(2*(L+1)))
+	start=(state>>(2*L))&3
+	state=state&(4^L-1)
+	if (start==3) || (below>=L)
+		flag[ind] = true
+		return
+	end
+	if state==0 && isodd(L)
+		flag[ind] = true
+		return
+	end
 	evenxs=iseven(trailingXs(state,L))
+	tot=start
 	if(state==1 && iseven(L))
 		state=0
 		evenxs=false
 	end
-	tot=start
-	if evenxs
-		edgeState[ind] |= 4+start
-	else
-		edgeState[ind] |= 1+start
-	end
-	for pos::Int8 = 0 : L-2
-		a::Int8=(state >> (2*pos)) & 3
+	for pos = 0 : L-1
+		tot%=3
+		a=(state >> (2*pos)) & 3
 		if a==0
 			evenxs = ! evenxs
 			if ((pos+1)==below || (below!=0 && pos==L-1))
 				tot = 3-tot
 			end
-		elseif a==2
-			tot+=1
-		elseif a==3
-			tot+=2
-		end
-		tot%=3
-		if evenxs
-			edgeState[ind] |= ((4+tot) << (3*(pos+1)))
 		else
-			edgeState[ind] |= ((1+tot) << (3*(pos+1)))
+			if(!evenxs)
+				flag[ind] = true
+				return
+			end
+			if a==2
+				tot+=1
+			elseif a==3
+				tot+=2
+			end
 		end
 	end
-	# revEdgeState[edgeState[ind]] = ind
+	tot=tot-start
+	if tot<0
+		tot+=3
+	end
+	tot%=3
+	if state==0 && isodd(L)
+		flag[ind] = true
+		return
+	end
+	if tot!=0
+		flag[ind] = true
+	end
 end
 
-function edgeState!(ind,flag,L)
-	es = 0
+println("preparing fusion flags...")
+
+fusionFlag_ = zeros(Bool,4^L)
+@time for i = 1 : 4^L
+	setFusionFlag!(fusionFlag_,i,L)
+end
+
+extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
+@time for i = 1 : 4^(L+3)*(L+2)
+	setFusionFlag!(extendedFusionFlag_,i,L+2)
+end
+
+#=
+Distinguished from Yuji's mainFlag by variable type.
+mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
+=#
+function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
+	return flag[ind]
+end
+
+#=
+
+An edgeState is a 6^L encoding of a state using the original anyon labels.
+An edgeStateMapping maps from index (4^L vertex label encoding) to edgeState.
+This is convenient for state visualization and debugging.
+
+It is also used by zip! to infer the correct F-symbol.
+But for this purpose, it suffices to know the anyon label before the draped ρ.
+TODO Only retaining this minimal info will save memory.
+How many nearby anyon labels to keep (1,2,3) depends on time vs memory.
+
+=#
+
+const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
+const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
+
+function setEdgeStateMapping!(edgeStateMapping::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
 	below = ((ind-1)>>(2*(L+1)))
 	start = ((ind-1)>>(2*L)) & 3
 	state = (ind-1)&(4^L-1)
@@ -595,9 +554,9 @@ function edgeState!(ind,flag,L)
 	end
 	tot=start
 	if evenxs
-		es |= 4+start
+		edgeStateMapping[ind] |= 4+start
 	else
-		es |= 1+start
+		edgeStateMapping[ind] |= 1+start
 	end
 	for pos = 0 : L-2
 		a=(state >> (2*pos)) & 3
@@ -613,15 +572,15 @@ function edgeState!(ind,flag,L)
 		end
 		tot%=3
 		if evenxs
-			es |= ((4+tot) << (3*(pos+1)))
+			edgeStateMapping[ind] |= ((4+tot) << (3*(pos+1)))
 		else
-			es |= ((1+tot) << (3*(pos+1)))
+			edgeStateMapping[ind] |= ((1+tot) << (3*(pos+1)))
 		end
 	end
-	return es
+	# revEdgeStateMapping[edgeStateMapping[ind]] = ind
 end
 
-function stringFromEdgeState(edgeState,L::Int64=L)
+function stringFromEdgeState(edgeState::Int64,L::Int64=L)
 	s=""
 	t=edgeRevmapping[(edgeState&7)]
 	for i in 1 : L
@@ -631,43 +590,32 @@ function stringFromEdgeState(edgeState,L::Int64=L)
 	return s*t
 end
 
-function test()
-	longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
-	for i = 1 : 4^(L+3)*(L+2)
-		setEdgeState!(longEdgeState_,i,longFlag_,L+2)
-	end
+# revEdgeStateMapping_ = zeros(Int64,8^L)
+println("preparing edge state mapping...")
+edgeStateMapping_ = zeros(Int64,4^(L+1)*L)
+@time for i = 1 : 4^(L+1)*L
+	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
 end
 
-@time test()
-
-edgeState_ = zeros(Int64,4^(L+1)*L)
-
-# revEdgeState_ = zeros(Int64,8^L)
-println("preparing edge state...")
-for i = 1 : 4^(L+1)*L
-	setEdgeState!(edgeState_,i,fusionFlag_,L)
-end
-
-longEdgeState_ = zeros(Int64,4^(L+3)*(L+2))
-# longRevEdgeState_ = zeros(Int64,8^(L+2))
-
-println("preparing long edge state...")
-for i = 1 : 4^(L+3)*(L+2)
-	setEdgeState!(longEdgeState_,i,longFlag_,L+2)
+println("preparing extended edge state mapping...")
+extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
+# extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
+@time for i = 1 : 4^(L+3)*(L+2)
+	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
 end
 
 # state = stateFromString("xy0xx-_2",L)
 # println()
 # # println(bitstring(ind))
 # println(stringFromState(state,L))
-# println(stringFromEdgeState(edgeState_[state+1],L))
-# # println(stringFromEdgeState(EdgeState!(state+1,flag_,L),L))
+# println(stringFromEdgeState(edgeStateMapping_[state+1],L))
+# # println(stringFromEdgeState(EdgeStateMapping!(state+1,flag_,L),L))
 # println()
 
 # for ind = 1 : 4^(L+1)*L
 # 	if (ind-1)&(4^L-1) == 1
 # 		if mainFlag(flag_,ind) == 0
-# 			println(stringFromState(ind-1,L), " = ", stringFromEdgeState(edgeState_[ind],L))
+# 			println(stringFromState(ind-1,L), " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
 # 		else
 # 			println(stringFromState(ind-1,L), " bad")
 # 		end
@@ -678,11 +626,11 @@ end
 F-symbol stuff
 =#
 
-function isInvertible(i)
+function isInvertible(i::Int64)
 	return i<4
 end
 
-function dual(i)
+function dual(i::Int64)
 	if i==2
 		return 3
 	elseif i==3
@@ -692,7 +640,7 @@ function dual(i)
 	end
 end
 
-function fusion(i,j)
+function fusion(i::Int64,j::Int64)
 	ans = []
 	if i<4
 		if j<4
@@ -711,16 +659,16 @@ function fusion(i,j)
 	return ans
 end
 
-function hasFusion(i,j,k)
+function hasFusion(i::Int64,j::Int64,k::Int64)
 	fused = fusion(i,j)
 	return k in fused
 end
 
-function add(i,j)
+function add(i::Int64,j::Int64)
 	return 4+((i+j-1)%3)
 end
 
-function FSymbol(i,j,k,l,m,n)
+function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
 	if !( hasFusion(i,j,m) && hasFusion(k,dual(l),dual(m)) && hasFusion(dual(l),i,dual(n)) && hasFusion(j,k,n) )
 		return 0
 	end
@@ -758,21 +706,21 @@ function FSymbol(i,j,k,l,m,n)
 			return y1
 		end
 	end
-	# println(i,j,k,l,m,n)
 	error("FSymbol not found")
 end
 
-function inv(s)
-	if s==2
+# Inverse of index: x->x, 0->0, ±->∓
+function inv(ind::Int64)
+	if ind==2
 		return 3
-	elseif s==3
+	elseif ind==3
 		return 2
 	else
-		return s
+		return ind
 	end
 end
 
-function attachInd(ind,sp,start,L::Int64=L+2)
+function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	if ind==2 && iseven(L)
 		state = 0
 	else
@@ -797,19 +745,7 @@ function attachInd(ind,sp,start,L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
 end
 
-# state = stateFromString("x++x_0")
-# println(stringFromState(state))
-# println(stringFromState( attachInd(state+1,sMP,1)-1, L+2))
-
-
-# longFlag_ = zeros(Int32,4^(L+3)*(L+2))
-#
-# println("preparing...")
-# for i = 1 : 4^(L+3)*(L+2)
-# 	setFlag!(longFlag_,i,L+2)
-# end
-
-function attach!(C,B)
+function attach!(C::Vector{Float64},B::Vector{Float64})
 	for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
 	end
@@ -820,37 +756,37 @@ function attach!(C,B)
 		state = stateFromInd(ind)
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = attachInd(ind,sXX,0)
-			if mainFlag(longFlag_,ni,L+2) != 0
+			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				println("a ", ind)
 				error("disallowed state")
 			end
 			C[ni] += B[ind]
 		else
 			ni = attachInd(ind,sXX,0)
-			if mainFlag(longFlag_,ni,L+2) != 0
+			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				println("b ",ind)
 				println(flag(ni,L+2))
-				println(longFlag_[ni])
+				println(extendedFusionFlag_[ni])
 				error("disallowed state")
 			end
 			C[ni] += 1/ζ * B[ind]
 			# ni = newInd(state,L+2,s00,0,0,L+2)
 			ni = attachInd(ind,s00,0)
-			if mainFlag(longFlag_,ni,L+2) != 0
+			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				println("c ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sPM,0,1,L+2)
 			ni = attachInd(ind,sPM,1)
-			if mainFlag(longFlag_,ni,L+2) != 0
+			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				println("d ",ind)
 				error("disallowed state")
 			end
 			C[ni] += ξ * B[ind]
 			# ni = newInd(state,L+2,sMP,0,2,L+2)
 			ni = attachInd(ind,sMP,2)
-			if mainFlag(longFlag_,ni,L+2) != 0
+			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
 				println("e ",ind)
 				error("disallowed state")
 			end
@@ -859,7 +795,7 @@ function attach!(C,B)
 	end
 end
 
-function ZipInd(ind,sp,L::Int64=L+2)
+function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	below = ((ind-1)>>(2*(L+1)))
 	if below == 0
 		error("no ρ from below")
@@ -888,7 +824,7 @@ function ZipInd(ind,sp,L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-function nextEdge(e,s,below=false)
+function nextEdge(e::Int64,s::Int64,below::Bool=false)
 	if e<4
 		if s==0
 			if below
@@ -912,22 +848,22 @@ function nextEdge(e,s,below=false)
 	end
 end
 
-function Zip!(C,B,i)
+function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
 	end
 	for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
-		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
+		if B[ind] == 0 || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
 
-		es = longEdgeState_[ind]
+		edgeState = extendedEdgeStateMapping_[ind]
 		j = i
-		e1 = (es>>(3*(j-1)))&7
+		e1 = (edgeState>>(3*(j-1)))&7
 		j += 1
-		e2 = (es>>(3*(j-1)))&7
+		e2 = (edgeState>>(3*(j-1)))&7
 		j += 1
-		e3 = (es>>(3*(j-1)))&7
+		e3 = (edgeState>>(3*(j-1)))&7
 
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
@@ -945,7 +881,7 @@ function Zip!(C,B,i)
 					continue
 				end
 				ni = ZipInd(ind,(s3,s4))
-				if mainFlag(longFlag_,ni,L+2)!=0 || FSymbol(4,e1,4,e3,e2,e4)==0
+				if mainFlag(extendedFusionFlag_,ni,L+2)!=0 || FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
 				end
 				C[ni] += FSymbol(4,e1,4,e3,e2,e4) * B[ind]
@@ -954,12 +890,12 @@ function Zip!(C,B,i)
 	end
 end
 
-function Detach!(C,B)
+function Detach!(C::Vector{Float64},B::Vector{Float64})
 	for ind = 1 : 4^L
 		C[ind] = 0
 	end
 	for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-		if B[ind] == 0 || mainFlag(longFlag_,ind,L+2) != 0
+		if B[ind] == 0 || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
 
@@ -988,16 +924,11 @@ function Detach!(C,B)
 	end
 end
 
-attach = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
-ρ = attach
-
+ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
 for i = 1 : L
-	global zip = LinearMap((C,B)->Zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
-	global ρ = zip * ρ
+	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 end
-
-detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
-ρ = detach * ρ
+ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 
 # mat = zeros(Bool,4^L)
 # for i = 1 : 4^L
@@ -1017,7 +948,7 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # 	if mainFlag(flag_,ind,L)==0
 # 		str = stringFromState(ind-1,L)
 # 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeState_[ind],L))
+# 		println(str, " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
 # 		testV = zeros(4^L)
 # 		testV[ind] = 1
 # 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
@@ -1026,7 +957,7 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # 		for i = 1 : 4^L
 # 			if testU[i] != 0
 # 				if mainFlag(flag_,i,L) == 0
-# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
+# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeStateMapping_[i],L), " has value ", testU[i])
 # 				end
 # 			end
 # 		end
@@ -1038,7 +969,7 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # 	if mainFlag(flag_,ind,L)==0
 # 		str = stringFromState(ind-1,L)
 # 		println()
-# 		println(str, " = ", stringFromEdgeState(edgeState_[ind],L))
+# 		println(str, " = ", stringFromEdgeState(edgeStateMapping_[ind],L))
 # 		testV = zeros(4^L)
 # 		testV[ind] = 1
 # 		println("mainFlag: ", mainFlag(flag_,ind,L)==0)
@@ -1046,8 +977,8 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # 		testU = attach * testV
 # 		for i = 4^(L+3)+1 : 4^(L+3)*2
 # 			if testU[i] != 0
-# 				if mainFlag(longFlag_,i,L+2) == 0
-# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 				if mainFlag(extendedFusionFlag_,i,L+2) == 0
+# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(extendedEdgeStateMapping_[i],L+2), " has value ", testU[i])
 # 				end
 # 			end
 # 		end
@@ -1055,19 +986,19 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 # end
 
 # for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-# 	if mainFlag(longFlag_,ind,L+2)==0
+# 	if mainFlag(extendedFusionFlag_,ind,L+2)==0
 # 		str = stringFromState(ind-1,L+2)
 # 		println()
-# 		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
+# 		println(str, " = ", stringFromEdgeState(extendedEdgeStateMapping_[ind],L+2))
 # 		testV = zeros(4^(L+3)*(L+2))
 # 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
+# 		println("mainFlag: ", mainFlag(extendedFusionFlag_,ind,L+2)==0)
 #
 # 		testU = detach * testV
 # 		for i = 1 : 4^L
 # 			if testU[i] != 0
 # 				if mainFlag(flag_,i,L) == 0
-# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeState_[i],L), " has value ", testU[i])
+# 					println(stringFromState(i-1,L), " = ", stringFromEdgeState(edgeStateMapping_[i],L), " has value ", testU[i])
 # 				end
 # 			end
 # 		end
@@ -1076,22 +1007,22 @@ detach = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymme
 
 
 
-# zip = LinearMap((C,B)->Zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
+# zip = LinearMap((C,B)->zip!(C,B,2),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false)
 # for ind = 4^(L+3)+1 : 4^(L+3)*(L+2)
-# 	# if mainFlag(longFlag_,ind,L+2)==0 && ind==1045
-# 	if mainFlag(longFlag_,ind,L+2)==0 && ind==2069
+# 	# if mainFlag(extendedFusionFlag_,ind,L+2)==0 && ind==1045
+# 	if mainFlag(extendedFusionFlag_,ind,L+2)==0 && ind==2069
 # 		str = stringFromState(ind-1,L+2)
 # 		println()
-# 		println(str, " = ", stringFromEdgeState(longEdgeState_[ind],L+2))
+# 		println(str, " = ", stringFromEdgeState(extendedEdgeStateMapping_[ind],L+2))
 # 		testV = zeros(4^(L+3)*(L+2))
 # 		testV[ind] = 1
-# 		println("mainFlag: ", mainFlag(longFlag_,ind,L+2)==0)
+# 		println("mainFlag: ", mainFlag(extendedFusionFlag_,ind,L+2)==0)
 #
 # 		testU = zip * testV
 # 		for i = 4^(L+3)*2+1 : 4^(L+3)*(L+2)
 # 			if testU[i] != 0
-# 				if mainFlag(longFlag_,i,L+2) == 0
-# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(longEdgeState_[i],L+2), " has value ", testU[i])
+# 				if mainFlag(extendedFusionFlag_,i,L+2) == 0
+# 					println(stringFromState(i-1,L+2), " = ", stringFromEdgeState(extendedEdgeStateMapping_[i],L+2), " has value ", testU[i])
 # 				end
 # 			end
 # 		end
