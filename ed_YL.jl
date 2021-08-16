@@ -516,10 +516,10 @@ fusionFlag_ = zeros(Bool,4^L)
 	setFusionFlag!(fusionFlag_,i,L)
 end
 
-extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
-@time for i = 1 : 4^(L+3)*(L+2)
-	setFusionFlag!(extendedFusionFlag_,i,L+2)
-end
+# extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
+# @time for i = 1 : 4^(L+3)*(L+2)
+# 	setFusionFlag!(extendedFusionFlag_,i,L+2)
+# end
 
 #=
 Distinguished from Yuji's mainFlag by variable type.
@@ -592,7 +592,8 @@ function stringFromEdgeState(edgeState::Int64,L::Int64=L)
 	return s*t
 end
 
-function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
+# function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
+function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L)
 	below = ((ind-1)>>(2*(L+1)))
 	if below==0
 		return
@@ -643,7 +644,8 @@ println()
 println("preparing edge at drape mapping...")
 edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
 @time for i = 1 : 4^(L+3)*(L+2)
-	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
+	# setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
+	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
 end
 
 
@@ -848,30 +850,30 @@ function attach!(C::Vector{Float64},B::Vector{Float64})
 		state = stateFromInd(ind)
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = attachInd(ind,sXX,0)
-			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				error("disallowed state")
-			end
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
 			C[ni] += B[ind]
 		else
 			ni = attachInd(ind,sXX,0)
-			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				error("disallowed state")
-			end
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
 			C[ni] += 1/ζ * B[ind]
 			ni = attachInd(ind,s00,0)
-			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				error("disallowed state")
-			end
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
 			C[ni] += ξ * B[ind]
 			ni = attachInd(ind,sPM,1)
-			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				error("disallowed state")
-			end
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
 			C[ni] += ξ * B[ind]
 			ni = attachInd(ind,sMP,2)
-			if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-				error("disallowed state")
-			end
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
 			C[ni] += ξ * B[ind]
 		end
 	end
@@ -911,7 +913,8 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 		C[ind] = 0
 	end
 	for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
-		if B[ind] == 0 || mainFlag(extendedFusionFlag_,ind,L+2) != 0
+		if B[ind] == 0
+			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
 
@@ -941,7 +944,8 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 				# 	continue
 				# end
 				ni = ZipInd(ind,(s3,s4))
-				if mainFlag(extendedFusionFlag_,ni,L+2)!=0 || FSymbolZipper(e1,s1,s2,s3,s4)==0
+				if FSymbolZipper(e1,s1,s2,s3,s4)==0
+					# || mainFlag(extendedFusionFlag_,ni,L+2)!=0
 					# FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
 				end
@@ -956,7 +960,8 @@ function Detach!(C::Vector{Float64},B::Vector{Float64})
 		C[ind] = 0
 	end
 	for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-		if B[ind] == 0 || mainFlag(extendedFusionFlag_,ind,L+2) != 0
+		if B[ind] == 0
+			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
 
