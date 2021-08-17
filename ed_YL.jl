@@ -5,7 +5,7 @@ using Arpack
 # using Profile
 # using Traceur
 
-const L=6
+const L=9
 
 #=
 
@@ -317,11 +317,11 @@ end
 
 const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}
 
-function Hfunc!(C::Hairetsu,B::Hairetsu,diag::Vector{Float64},flag::Vector{Int64})
-	for ind = 1 : 4^L
+function Hfunc!(C,B,diag::Vector{Float64},flag::Vector{Int64})
+	Threads.@threads for ind = 1 : 4^L
 		C[ind] = diag[ind] * B[ind]
 	end
-	for ind = 1 : 4^L
+	Threads.@threads for ind = 1 : 4^L
 		if  mainFlag(flag,ind) !=0
 			continue
 		end
@@ -368,18 +368,18 @@ function Hfunc!(C::Hairetsu,B::Hairetsu,diag::Vector{Float64},flag::Vector{Int64
 end
 
 println()
+println("avaliable number of threads:", Threads.nthreads())
 println("preparing...")
-@time for i = 1 : 4^L
+Threads.@threads for i = 1 : 4^L
 	setFlag!(flag_,i)
 	computeDiag!(diag_,flag_,i)
 end
 
-println()
-println("computing eigenvalues...")
+# println()
+# println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=1,which=:SR)
-println(sort(e))
-
+# @time e,v = eigs(H,nev=10,which=:SR)
+# println(sort(e))
 
 #=
 
@@ -403,7 +403,7 @@ function Tind(ind::Int64,L::Int64,right::Bool)
 end
 
 function Tfunc!(C::Vector{Float64},B::Vector{Float64},L::Int64=L,right::Bool=true)
-	for ind = 1 : 4^L
+	Threads.@threads for ind = 1 : 4^L
 		C[ind] = B[Tind(ind,L,right)]
 	end
 end
@@ -439,19 +439,23 @@ end
 Simultaneously diagonalize Hamiltonian and translation.
 Output sorted pairs of energy and momentum.
 =#
-println()
-println("diagonalizing H,T...")
-smallH = Matrix(diagm(e))
-smallT = Matrix(adjoint(v)*T*v)
-smalle,smallv = eigen(smallH+smallT)
-Hs = real(diag(adjoint(smallv)*smallH*smallv))
-Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-Ps = real(map(log,Ts)/(2*π*im))*L
-HPs = hcat(Hs,Ps)
-HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
-s=""
-s*=string(HPs[1][1])
-println(mathematicaMatrix(HPs))
+function diagonalizeHT(e,v,T)
+	println()
+	println("diagonalizing H,T...")
+	smallH = Matrix(diagm(e))
+	smallT = Matrix(adjoint(v)*T*v)
+	smalle,smallv = eigen(smallH+smallT)
+	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+	Ps = real(map(log,Ts)/(2*π*im))*L
+	HPs = hcat(Hs,Ps)
+	HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
+	s=""
+	s*=string(HPs[1][1])
+	println(mathematicaMatrix(HPs))
+end
+
+# diagonalizeHT(e,v,T)
 
 #=
 A fusionFlag retains the information of whether main flag is 0 to save memory.
@@ -512,12 +516,12 @@ end
 println("preparing fusion flags...")
 
 fusionFlag_ = zeros(Bool,4^L)
-@time for i = 1 : 4^L
+@time Threads.@threads for i = 1 : 4^L
 	setFusionFlag!(fusionFlag_,i,L)
 end
 
 # extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
-# @time for i = 1 : 4^(L+3)*(L+2)
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 # 	setFusionFlag!(extendedFusionFlag_,i,L+2)
 # end
 
@@ -593,7 +597,7 @@ function stringFromEdgeState(edgeState::Int64,L::Int64=L)
 end
 
 # function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
-function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L)
+function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
 	below = ((ind-1)>>(2*(L+1)))
 	if below==0
 		return
@@ -627,8 +631,8 @@ end
 # revEdgeStateMapping_ = zeros(Int64,8^L)
 println()
 println("preparing edge state mapping...")
-edgeStateMapping_ = zeros(Int64,4^(L+1)*L)
-@time for i = 1 : 4^(L+1)*L
+edgeStateMapping_ = zeros(Int64,4^L)
+@time Threads.@threads for i = 1 : 4^L
 	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
 end
 
@@ -636,14 +640,14 @@ end
 # println("preparing extended edge state mapping...")
 # extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
 # # extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
-# @time for i = 1 : 4^(L+3)*(L+2)
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 # 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
 # end
 
 println()
 println("preparing edge at drape mapping...")
 edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
-@time for i = 1 : 4^(L+3)*(L+2)
+@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 	# setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
 	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
 end
@@ -694,7 +698,11 @@ function hasFusion(i::Int64,j::Int64,k::Int64)
 end
 
 function add(i::Int64,j::Int64)
-	return 4+((i+j-1)%3)
+	if i<4
+		return 1+((i+j-1)%3)
+	else
+		return 4+((i+j-1)%3)
+	end
 end
 
 function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
@@ -839,11 +847,11 @@ function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
 end
 
-function attach!(C::Vector{Float64},B::Vector{Float64})
-	for ind = 1 : 4^(L+3)*(L+2)
+function attach!(C,B)
+	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
 	end
-	for ind = 1 : 4^L
+	Threads.@threads for ind = 1 : 4^L
 		if B[ind] == 0 || mainFlag(flag_,ind,L) != 0
 			continue
 		end
@@ -908,17 +916,26 @@ function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
-	for ind = 1 : 4^(L+3)*(L+2)
+function zip!(C,B,i::Int64)
+	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
 		C[ind] = 0
 	end
-	for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
+	Threads.@threads for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
 		if B[ind] == 0
 			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
 
 		e1 = Int64(edgeAtDrapeMapping_[ind])
+
+		# start = ((ind-1)>>(2*(L+2))) & 3
+		# e1 = (edgeStateMapping_[1+((ind-1)&(4^(L+2)-1))] >> 3*(i-1)) & 7
+		# e1 = add(e1, start)
+		#
+		# if e1!=e1True
+		# 	println(e1, e1True, ind)
+		# 	error("")
+		# end
 
 		# edgeState = extendedEdgeStateMapping_[ind]
 		# j = i
@@ -955,11 +972,11 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	end
 end
 
-function Detach!(C::Vector{Float64},B::Vector{Float64})
-	for ind = 1 : 4^L
+function Detach!(C,B)
+	Threads.@threads for ind = 1 : 4^L
 		C[ind] = 0
 	end
-	for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
+	Threads.@threads for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
 		if B[ind] == 0
 			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
@@ -997,18 +1014,48 @@ end
 ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 
 # TODO Is there more efficient way than converting to Matrix and then eigen?
-println()
-println("diagonalizing H,T,ρ...")
-smallH = Matrix(diagm(e))
-smallT = Matrix(adjoint(v)*T*v)
-smallρ = Matrix(adjoint(v)*ρ*v)
-smalle,smallv = eigen(smallH+smallT+smallρ)
-Hs = real(diag(adjoint(smallv)*smallH*smallv))
-Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-Ps = real(map(log,Ts)/(2*π*im))*L
-ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-HPρs = hcat(Hs,Ps,ρs)
-HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-s=""
-s*=string(HPρs[1][1])
-print(mathematicaMatrix(HPρs))
+
+function diagonalizeHTρ(e,v,T,ρ)
+	println()
+	println("diagonalizing H,T,ρ...")
+
+	@time smallH = diagm(e)
+	@time smallT = adjoint(v)*T*v
+	@time smallρ = adjoint(v)*ρ*v
+	# smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=3,which=:SR)
+	small = smallH+smallT+smallρ
+	@time smalle,smallv = eigs_ArnoldiMethod(small)
+
+	# smallH = Matrix(diagm(e))
+	# smallT = Matrix(adjoint(v)*T*v)
+	# smallρ = Matrix(adjoint(v)*ρ*v)
+	# # smalle,smallv = eigen(smallH+smallT+smallρ)
+	#
+	# Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	# Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+	# Ps = real(map(log,Ts)/(2*π*im))*L
+	# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+	# HPρs = hcat(Hs,Ps,ρs)
+	# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+	# s=""
+	# s*=string(HPρs[1][1])
+	# print(mathematicaMatrix(HPρs))
+end
+
+# diagonalizeHTρ(e,v,T,ρ)
+
+const nev = 3
+
+function eigs_ArnoldiMethod(H)
+	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
+	e,v = ArnoldiMethod.partialeigen(decomp)
+	return e,v
+end
+
+println("using Arpack:")
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+@time diagonalizeHTρ(e,v,T,ρ)
+
+# println("using ArnoldiMethod:")
+# @time e,v = eigs_ArnoldiMethod(H)
+# @time diagonalizeHTρ(e,v,T,ρ)
