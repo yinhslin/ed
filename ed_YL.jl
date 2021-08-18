@@ -7,7 +7,7 @@ using Arpack
 
 # BLAS.set_num_threads(48);
 
-const L=10
+const L=6
 
 #=
 
@@ -375,18 +375,19 @@ const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, tr
 # 	end
 # end
 
-# println()
-# println("avaliable number of threads:", Threads.nthreads())
-# println("preparing...")
-# Threads.@threads for i = 1 : 4^L
-# 	setFlag!(flag_,i)
-# 	computeDiag!(diag_,flag_,i)
-# end
-#
+println()
+println("avaliable number of threads:", Threads.nthreads())
+println("preparing...")
+Threads.@threads for i = 1 : 4^L
+	setFlag!(flag_,i)
+	computeDiag!(diag_,flag_,i)
+end
+
 # const basis = filter(x -> (mainFlag(flag_,x)==0),1:4^L)
-# const len = length(basis)
-# const fromInd = Dict((basis[x],x) for x in 1:len)
-# newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
+const basis = filter(x -> true,1:4^L)
+const len = length(basis)
+const fromInd = Dict((basis[x],x) for x in 1:len)
+newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
 function Hfunc!(C,B,diag::Vector{Float64},flag::Vector{Int64})
 	Threads.@threads for preind = 1 : len
@@ -712,625 +713,627 @@ extendedFusionFlagRecursive_ = zeros(Bool,4^(L+3)*(L+2))
 # 	end
 # end
 
-#
-# #=
-# Distinguished from Yuji's mainFlag by variable type.
-# mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
-# =#
-# function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
-# 	return flag[ind]
-# end
-#
-# #=
-#
-# An edgeState is a 6^L encoding of a state using the original anyon labels.
-# An edgeStateMapping maps from index (4^L vertex label encoding) to edgeState.
-# This is convenient for state visualization and debugging.
-#
-# It is also used by zip! to infer the correct F-symbol.
-# But for this purpose, it suffices to know the anyon label before the draped ρ.
-# TODO Only retaining this minimal info will save memory.
-# How many nearby anyon labels to keep (1,2,3) depends on time vs memory.
-#
-# =#
-#
-# const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
-# const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
-#
-# function setEdgeStateMapping!(edgeStateMapping::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
-# 	below = ((ind-1)>>(2*(L+1)))
-# 	start = ((ind-1)>>(2*L)) & 3
-# 	state = (ind-1)&(4^L-1)
-# 	evenxs=iseven(trailingXs(state,L))
-# 	if(state==1 && iseven(L))
-# 		state=0
-# 		evenxs=false
-# 	end
-# 	tot=start
-# 	if evenxs
-# 		edgeStateMapping[ind] |= 4+start
-# 	else
-# 		edgeStateMapping[ind] |= 1+start
-# 	end
-# 	for pos = 0 : L-2
-# 		a=(state >> (2*pos)) & 3
-# 		if a==0
-# 			evenxs = ! evenxs
-# 			if ((pos+1)==below || (below!=0 && pos==L-1))
-# 				tot = 3-tot
-# 			end
-# 		elseif a==2
-# 			tot+=1
-# 		elseif a==3
-# 			tot+=2
-# 		end
-# 		tot%=3
-# 		if evenxs
-# 			edgeStateMapping[ind] |= ((4+tot) << (3*(pos+1)))
-# 		else
-# 			edgeStateMapping[ind] |= ((1+tot) << (3*(pos+1)))
-# 		end
-# 	end
-# 	# revEdgeStateMapping[edgeStateMapping[ind]] = ind
-# end
-#
-# function stringFromEdgeState(edgeState::Int64,L::Int64=L)
-# 	s=""
-# 	t=edgeRevmapping[(edgeState&7)]
-# 	for i in 1 : L
-# 		s*=edgeRevmapping[(edgeState&7)]
-# 		edgeState>>=3
-# 	end
-# 	return s*t
-# end
-#
-# # function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
-# function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
-# 	below = ((ind-1)>>(2*(L+1)))
-# 	if below==0
-# 		return
-# 	end
-# 	start = ((ind-1)>>(2*L)) & 3
-# 	state = (ind-1)&(4^L-1)
-# 	evenxs=iseven(trailingXs(state,L))
-# 	if(state==1 && iseven(L))
-# 		state=0
-# 		evenxs=false
-# 	end
-# 	tot=start
-# 	for pos = 0 : below-2
-# 		a=(state >> (2*pos)) & 3
-# 		if a==0
-# 			evenxs = ! evenxs
-# 		elseif a==2
-# 			tot+=1
-# 		elseif a==3
-# 			tot+=2
-# 		end
-# 	end
-# 	tot%=3
-# 	if evenxs
-# 		edgeAtDrapeMapping[ind] = 4+tot
-# 	else
-# 		edgeAtDrapeMapping[ind] = 1+tot
-# 	end
-# end
-#
-# # revEdgeStateMapping_ = zeros(Int64,8^L)
+
+#=
+Distinguished from Yuji's mainFlag by variable type.
+mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
+=#
+function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
+	return flag[ind]
+end
+
+#=
+
+An edgeState is a 6^L encoding of a state using the original anyon labels.
+An edgeStateMapping maps from index (4^L vertex label encoding) to edgeState.
+This is convenient for state visualization and debugging.
+
+It is also used by zip! to infer the correct F-symbol.
+But for this purpose, it suffices to know the anyon label before the draped ρ.
+TODO Only retaining this minimal info will save memory.
+How many nearby anyon labels to keep (1,2,3) depends on time vs memory.
+
+=#
+
+const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
+const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
+
+# TODO Recursive?
+function setEdgeStateMapping!(edgeStateMapping::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
+	below = ((ind-1)>>(2*(L+1)))
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	evenxs=iseven(trailingXs(state,L))
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	tot=start
+	if evenxs
+		edgeStateMapping[ind] |= 4+start
+	else
+		edgeStateMapping[ind] |= 1+start
+	end
+	for pos = 0 : L-2
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+			if ((pos+1)==below || (below!=0 && pos==L-1))
+				tot = 3-tot
+			end
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+		tot%=3
+		if evenxs
+			edgeStateMapping[ind] |= ((4+tot) << (3*(pos+1)))
+		else
+			edgeStateMapping[ind] |= ((1+tot) << (3*(pos+1)))
+		end
+	end
+	# revEdgeStateMapping[edgeStateMapping[ind]] = ind
+end
+
+function stringFromEdgeState(edgeState::Int64,L::Int64=L)
+	s=""
+	t=edgeRevmapping[(edgeState&7)]
+	for i in 1 : L
+		s*=edgeRevmapping[(edgeState&7)]
+		edgeState>>=3
+	end
+	return s*t
+end
+
+# TODO Recursive?
+# function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
+function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
+	below = ((ind-1)>>(2*(L+1)))
+	if below==0
+		return
+	end
+	start = ((ind-1)>>(2*L)) & 3
+	state = (ind-1)&(4^L-1)
+	evenxs=iseven(trailingXs(state,L))
+	if(state==1 && iseven(L))
+		state=0
+		evenxs=false
+	end
+	tot=start
+	for pos = 0 : below-2
+		a=(state >> (2*pos)) & 3
+		if a==0
+			evenxs = ! evenxs
+		elseif a==2
+			tot+=1
+		elseif a==3
+			tot+=2
+		end
+	end
+	tot%=3
+	if evenxs
+		edgeAtDrapeMapping[ind] = 4+tot
+	else
+		edgeAtDrapeMapping[ind] = 1+tot
+	end
+end
+
+# revEdgeStateMapping_ = zeros(Int64,8^L)
+println()
+println("preparing edge state mapping...")
+edgeStateMapping_ = zeros(Int64,4^L)
+@time Threads.@threads for i = 1 : 4^L
+	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
+end
+
 # println()
-# println("preparing edge state mapping...")
-# edgeStateMapping_ = zeros(Int64,4^L)
-# @time Threads.@threads for i = 1 : 4^L
-# 	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
+# println("preparing extended edge state mapping...")
+# extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
+# # extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+# 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
 # end
+
+println()
+println("preparing edge at drape mapping...")
+edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
+@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+	# setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
+	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
+end
+
+
+#=
+
+F-symbol stuff.
+
+=#
+
+function isInvertible(i::Int64)
+	return i<4
+end
+
+function dual(i::Int64)
+	if i==2
+		return 3
+	elseif i==3
+		return 2
+	else
+		return i
+	end
+end
+
+function fusion(i::Int64,j::Int64)
+	ans = []
+	if i<4
+		if j<4
+			append!(ans,1+((i+j-2)%3))
+		else
+			append!(ans,4+((i+j-2)%3))
+		end
+	else
+		if j<4
+			return fusion(1+((4-j)%3),i)
+		else
+			append!(ans,1+((3+i-j)%3))
+			append!(ans,[4,5,6])
+		end
+	end
+	return ans
+end
+
+function hasFusion(i::Int64,j::Int64,k::Int64)
+	fused = fusion(i,j)
+	return k in fused
+end
+
+function add(i::Int64,j::Int64)
+	if i<4
+		return 1+((i+j-1)%3)
+	else
+		return 4+((i+j-1)%3)
+	end
+end
+
+function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
+	if !( hasFusion(i,j,m) && hasFusion(k,dual(l),dual(m)) && hasFusion(dual(l),i,dual(n)) && hasFusion(j,k,n) )
+		return 0
+	end
+	if isInvertible(i) || isInvertible(j) || isInvertible(k) || isInvertible(l)
+		return 1
+	end
+	if isInvertible(m) && isInvertible(n)
+		return 1/ζ
+	end
+	if isInvertible(m) || isInvertible(n)
+		return ξ
+	end
+	if i!=4
+		return FSymbol(4, j, add(k,i-4), l, m, n)
+	end
+	if j!=4
+		return FSymbol(4, 4, k, add(l,j-4), m, n)
+	end
+	if k!=4
+		return FSymbol(4, 4, 4, add(l,4-k), m, add(n,4-k))
+	end
+	if m!=4
+		return FSymbol(4, 4, 4, l, 4, add(n,m-4))
+	end
+	if i==j==k==m==4 && !(isInvertible(l)) && !(isInvertible(n))
+		if l+n==8
+			return x
+		elseif l+n==9
+			return y1
+		elseif l+n==10
+			return y2
+		elseif l+n==11
+			return z
+		elseif l+n==12
+			return y1
+		end
+	end
+	error("FSymbol not found")
+end
+
+function nextEdge(e::Int64,s::Int64,below::Bool=false)
+	if e<4
+		if s==0
+			if below
+				return 4+((4-e)%3)
+			else
+				return e+3
+			end
+		else
+			return false
+		end
+	else
+		if s==0
+			if below
+				return 1+((7-e)%3)
+			else
+				return e-3
+			end
+		else
+			return 4+((e+s-2)%3)
+		end
+	end
+end
+
+fSymbolMapping_ = zeros(Float64, 1536)
+
+for e1 = 1 : 6
+	for s1 = 0 : 3
+		for s2 = 0 : 3
+			for s3 = 0 : 3
+				for s4 = 0 : 3
+					i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
+					e2 = nextEdge(e1,s1,true)
+					if e2 == 0
+						continue
+					end
+					e3 = nextEdge(e2,s2,false)
+					if e3 == 0
+						continue
+					end
+					e4 = nextEdge(e1,s3,false)
+					if e4 == 0 || e3 != nextEdge(e4,s4,true)
+						continue
+					end
+					fSymbolMapping_[i+1] = FSymbol(4,e1,4,e3,e2,e4)
+				end
+			end
+		end
+	end
+end
+
+function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
+	i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
+	return fSymbolMapping_[i+1]
+end
+
+
+#=
+
+Zipper stuff.
+
+TODO Use fusion space basis and encode each linear map as a sparse array.
+
+=#
+
+# Inverse of index: x->x, 0->0, ±->∓
+function inv(ind::Int64)
+	if ind==2
+		return 3
+	elseif ind==3
+		return 2
+	else
+		return ind
+	end
+end
+
+function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
+	if ind==2 && iseven(L)
+		state = 0
+	else
+		state = (ind-1)
+	end
+	state = state << 2
+
+	(a,b)=sp
+
+	i = L
+	state &= ~(3<<(2*(i-1)))
+	state |= (a<<(2*(i-1)))
+
+	j = 1
+	state &= ~(3<<(2*(j-1)))
+	state |= (b<<(2*(j-1)))
+
+	if (state==0) && iseven(L) && (ind==1)
+		state = 1
+	end
+
+	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
+end
+
+function attach!(C,B)
+	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
+		C[ind] = 0
+	end
+	Threads.@threads for ind = 1 : 4^L
+		if B[ind] == 0 || mainFlag(flag_,ind,L) != 0
+			continue
+		end
+		state = stateFromInd(ind)
+		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
+			ni = attachInd(ind,sXX,0)
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
+			C[ni] += B[ind]
+		else
+			ni = attachInd(ind,sXX,0)
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
+			C[ni] += 1/ζ * B[ind]
+			ni = attachInd(ind,s00,0)
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
+			C[ni] += ξ * B[ind]
+			ni = attachInd(ind,sPM,1)
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
+			C[ni] += ξ * B[ind]
+			ni = attachInd(ind,sMP,2)
+			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
+			# 	error("disallowed state")
+			# end
+			C[ni] += ξ * B[ind]
+		end
+	end
+end
+
+function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
+	below = ((ind-1)>>(2*(L+1)))
+	if below == 0
+		error("no ρ from below")
+	end
+	start = ((ind-1)>>(2*L)) & 3
+	i = below
+	below += 1
+	state = (ind-1) & (4^L-1)
+	if state==1 && iseven(L)
+		state = 0
+	end
+
+	(a,b)=sp
+
+	state &= ~(3<<(2*(i-1)))
+	state |= (a<<(2*(i-1)))
+
+	j=i+1
+	state &= ~(3<<(2*(j-1)))
+	state |= (b<<(2*(j-1)))
+
+	if (state==0) && (isodd(trailingXs((ind-1)&(4^L-1),L)) || (iseven(L) && ((ind-1)&(4^L-1))==1))
+		state = 1
+	end
+
+	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
+end
+
+function zip!(C,B,i::Int64)
+	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
+		C[ind] = 0
+	end
+	Threads.@threads for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
+		if B[ind] == 0
+			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
+			continue
+		end
+
+		e1 = Int64(edgeAtDrapeMapping_[ind])
+
+		# start = ((ind-1)>>(2*(L+2))) & 3
+		# e1 = (edgeStateMapping_[1+((ind-1)&(4^(L+2)-1))] >> 3*(i-1)) & 7
+		# e1 = add(e1, start)
+		#
+		# if e1!=e1True
+		# 	println(e1, e1True, ind)
+		# 	error("")
+		# end
+
+		# edgeState = extendedEdgeStateMapping_[ind]
+		# j = i
+		# e1 = (edgeState>>(3*(j-1)))&7
+		# j += 1
+		# e2 = (edgeState>>(3*(j-1)))&7
+		# j += 1
+		# e3 = (edgeState>>(3*(j-1)))&7
+
+		state = stateFromInd(ind,L+2)
+		s1,s2 = localStatePair(state,i,L+2)
+
+		# if (e2 != nextEdge(e1,s1,true) || e3 != nextEdge(e2,s2,false))
+		# 	error("inconsistent edges")
+		# end
+		for s3 = 0 : 3
+			# e4 = nextEdge(e1,s3,false)
+			# if e4 == false
+			# 	continue
+			# end
+			for s4 = 0 : 3
+				# if (e3 != nextEdge(e4,s4,true))
+				# 	continue
+				# end
+				ni = ZipInd(ind,(s3,s4))
+				if FSymbolZipper(e1,s1,s2,s3,s4)==0
+					# || mainFlag(extendedFusionFlag_,ni,L+2)!=0
+					# FSymbol(4,e1,4,e3,e2,e4)==0
+					continue
+				end
+				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[ind]
+			end
+		end
+	end
+end
+
+function Detach!(C,B)
+	Threads.@threads for ind = 1 : 4^L
+		C[ind] = 0
+	end
+	Threads.@threads for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
+		if B[ind] == 0
+			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
+			continue
+		end
+
+		state = stateFromInd(ind,L+2)
+		ni = 1+(state&(4^L-1))
+		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
+			ni=2
+		end
+		if mainFlag(flag_,ni,L) != 0
+			continue
+		end
+		s1,s2 = localStatePair(state,L+1,L+2)
+		if s1==inv(s2)
+			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+				if (s1,s2)==sXX
+					C[ni] += ζ * B[ind]
+				end
+			else
+				if (s1,s2)==sXX
+					C[ni] += B[ind]
+				else
+					C[ni] += √ζ * B[ind]
+				end
+			end
+		end
+	end
+end
+
+ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
+for i = 1 : L
+	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+end
+ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+
+# TODO Is there more efficient way than converting to Matrix and then eigen?
+
+function diagonalizeHTρ(e,v,T,ρ)
+	println()
+	println("diagonalizing H,T,ρ...")
+
+	@time smallH = diagm(e)
+	@time smallT = adjoint(v)*T*v
+	@time smallρ = adjoint(v)*ρ*v
+	# smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=3,which=:SR)
+	small = smallH+smallT+smallρ
+	@time smalle,smallv = eigs_ArnoldiMethod(small)
+
+	smallH = Matrix(diagm(e))
+	smallT = Matrix(adjoint(v)*T*v)
+	smallρ = Matrix(adjoint(v)*ρ*v)
+	# smalle,smallv = eigen(smallH+smallT+smallρ)
+
+	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+	Ps = real(map(log,Ts)/(2*π*im))*L
+	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+	HPρs = hcat(Hs,Ps,ρs)
+	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+	s=""
+	s*=string(HPρs[1][1])
+	print(mathematicaMatrix(HPρs))
+end
+
+# diagonalizeHTρ(e,v,T,ρ)
+
+# function buildH(diag,flag)
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	for preind = 1 : len
+# 		ind = basis[preind]
+# 		state=stateFromInd(ind)
+# 		append!(col,[preind])
+# 		append!(row,[preind])
+# 		append!(val,[diag[ind]])
+# 		for i = 1 : L
+# 			sp=localStatePair(state,i)
+# 			if sp==sXX  && isρ1ρ(flag,ind,i)
 #
-# # println()
-# # println("preparing extended edge state mapping...")
-# # extendedEdgeStateMapping_ = zeros(Int64,4^(L+3)*(L+2))
-# # # extendedRevEdgeStateMapping_ = zeros(Int64,8^(L+2))
-# # @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-# # 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
-# # end
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+# 				append!(val,-ξ .* [y1,y2,x])
 #
-# println()
-# println("preparing edge at drape mapping...")
-# # edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
-# # @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-# # 	# setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
-# # 	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
-# # end
+# 			elseif sp==sPM
 #
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+# 				append!(val,-y1 .* [ξ,y2,x])
 #
-# #=
+# 			elseif sp==sMP
 #
-# F-symbol stuff.
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+# 				append!(val,-y2 .* [ξ,y1,x])
 #
-# =#
+# 			elseif sp==s00
 #
-# function isInvertible(i::Int64)
-# 	return i<4
-# end
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+# 				append!(val,-x .* [ξ,y1,y2])
 #
-# function dual(i::Int64)
-# 	if i==2
-# 		return 3
-# 	elseif i==3
-# 		return 2
-# 	else
-# 		return i
-# 	end
-# end
+# 			elseif sp==s0P
 #
-# function fusion(i::Int64,j::Int64)
-# 	ans = []
-# 	if i<4
-# 		if j<4
-# 			append!(ans,1+((i+j-2)%3))
-# 		else
-# 			append!(ans,4+((i+j-2)%3))
-# 		end
-# 	else
-# 		if j<4
-# 			return fusion(1+((4-j)%3),i)
-# 		else
-# 			append!(ans,1+((3+i-j)%3))
-# 			append!(ans,[4,5,6])
-# 		end
-# 	end
-# 	return ans
-# end
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
+# 				append!(val,-y1 .* [y2,z])
 #
-# function hasFusion(i::Int64,j::Int64,k::Int64)
-# 	fused = fusion(i,j)
-# 	return k in fused
-# end
+# 			elseif sp==sP0
 #
-# function add(i::Int64,j::Int64)
-# 	if i<4
-# 		return 1+((i+j-1)%3)
-# 	else
-# 		return 4+((i+j-1)%3)
-# 	end
-# end
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
+# 				append!(val,-y2 .* [y1,z])
 #
-# function FSymbol(i::Int64,j::Int64,k::Int64,l::Int64,m::Int64,n::Int64)
-# 	if !( hasFusion(i,j,m) && hasFusion(k,dual(l),dual(m)) && hasFusion(dual(l),i,dual(n)) && hasFusion(j,k,n) )
-# 		return 0
-# 	end
-# 	if isInvertible(i) || isInvertible(j) || isInvertible(k) || isInvertible(l)
-# 		return 1
-# 	end
-# 	if isInvertible(m) && isInvertible(n)
-# 		return 1/ζ
-# 	end
-# 	if isInvertible(m) || isInvertible(n)
-# 		return ξ
-# 	end
-# 	if i!=4
-# 		return FSymbol(4, j, add(k,i-4), l, m, n)
-# 	end
-# 	if j!=4
-# 		return FSymbol(4, 4, k, add(l,j-4), m, n)
-# 	end
-# 	if k!=4
-# 		return FSymbol(4, 4, 4, add(l,4-k), m, add(n,4-k))
-# 	end
-# 	if m!=4
-# 		return FSymbol(4, 4, 4, l, 4, add(n,m-4))
-# 	end
-# 	if i==j==k==m==4 && !(isInvertible(l)) && !(isInvertible(n))
-# 		if l+n==8
-# 			return x
-# 		elseif l+n==9
-# 			return y1
-# 		elseif l+n==10
-# 			return y2
-# 		elseif l+n==11
-# 			return z
-# 		elseif l+n==12
-# 			return y1
-# 		end
-# 	end
-# 	error("FSymbol not found")
-# end
+# 			elseif sp==sMM
 #
-# function nextEdge(e::Int64,s::Int64,below::Bool=false)
-# 	if e<4
-# 		if s==0
-# 			if below
-# 				return 4+((4-e)%3)
-# 			else
-# 				return e+3
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
+# 				append!(val,-z .* [y1,y2])
+#
+# 			elseif sp==s0M
+#
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
+# 				append!(val,-y2 .* [y1,z])
+#
+# 			elseif sp==sM0
+#
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
+# 				append!(val,-y1 .* [y2,z])
+#
+# 			elseif sp==sPP
+#
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
+# 				append!(val,-z .* [y2,y1])
+#
 # 			end
-# 		else
-# 			return false
-# 		end
-# 	else
-# 		if s==0
-# 			if below
-# 				return 1+((7-e)%3)
-# 			else
-# 				return e-3
-# 			end
-# 		else
-# 			return 4+((e+s-2)%3)
 # 		end
 # 	end
+# 	return sparse(row,col,val)
 # end
 #
-# fSymbolMapping_ = zeros(Float64, 1536)
-#
-# for e1 = 1 : 6
-# 	for s1 = 0 : 3
-# 		for s2 = 0 : 3
-# 			for s3 = 0 : 3
-# 				for s4 = 0 : 3
-# 					i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
-# 					e2 = nextEdge(e1,s1,true)
-# 					if e2 == 0
-# 						continue
-# 					end
-# 					e3 = nextEdge(e2,s2,false)
-# 					if e3 == 0
-# 						continue
-# 					end
-# 					e4 = nextEdge(e1,s3,false)
-# 					if e4 == 0 || e3 != nextEdge(e4,s4,true)
-# 						continue
-# 					end
-# 					fSymbolMapping_[i+1] = FSymbol(4,e1,4,e3,e2,e4)
-# 				end
-# 			end
-# 		end
-# 	end
-# end
-#
-# function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
-# 	i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
-# 	return fSymbolMapping_[i+1]
-# end
-#
-#
-# #=
-#
-# Zipper stuff.
-#
-# TODO Use fusion space basis and encode each linear map as a sparse array.
-#
-# =#
-#
-# # Inverse of index: x->x, 0->0, ±->∓
-# function inv(ind::Int64)
-# 	if ind==2
-# 		return 3
-# 	elseif ind==3
-# 		return 2
-# 	else
-# 		return ind
-# 	end
-# end
-#
-# function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
-# 	if ind==2 && iseven(L)
-# 		state = 0
-# 	else
-# 		state = (ind-1)
-# 	end
-# 	state = state << 2
-#
-# 	(a,b)=sp
-#
-# 	i = L
-# 	state &= ~(3<<(2*(i-1)))
-# 	state |= (a<<(2*(i-1)))
-#
-# 	j = 1
-# 	state &= ~(3<<(2*(j-1)))
-# 	state |= (b<<(2*(j-1)))
-#
-# 	if (state==0) && iseven(L) && (ind==1)
-# 		state = 1
-# 	end
-#
-# 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
-# end
-#
-# function attach!(C,B)
-# 	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
-# 		C[ind] = 0
-# 	end
-# 	Threads.@threads for ind = 1 : 4^L
-# 		if B[ind] == 0 || mainFlag(flag_,ind,L) != 0
-# 			continue
-# 		end
-# 		state = stateFromInd(ind)
-# 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
-# 			ni = attachInd(ind,sXX,0)
-# 			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-# 			# 	error("disallowed state")
-# 			# end
-# 			C[ni] += B[ind]
-# 		else
-# 			ni = attachInd(ind,sXX,0)
-# 			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-# 			# 	error("disallowed state")
-# 			# end
-# 			C[ni] += 1/ζ * B[ind]
-# 			ni = attachInd(ind,s00,0)
-# 			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-# 			# 	error("disallowed state")
-# 			# end
-# 			C[ni] += ξ * B[ind]
-# 			ni = attachInd(ind,sPM,1)
-# 			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-# 			# 	error("disallowed state")
-# 			# end
-# 			C[ni] += ξ * B[ind]
-# 			ni = attachInd(ind,sMP,2)
-# 			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-# 			# 	error("disallowed state")
-# 			# end
-# 			C[ni] += ξ * B[ind]
-# 		end
-# 	end
-# end
-#
-# function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
-# 	below = ((ind-1)>>(2*(L+1)))
-# 	if below == 0
-# 		error("no ρ from below")
-# 	end
-# 	start = ((ind-1)>>(2*L)) & 3
-# 	i = below
-# 	below += 1
-# 	state = (ind-1) & (4^L-1)
-# 	if state==1 && iseven(L)
-# 		state = 0
-# 	end
-#
-# 	(a,b)=sp
-#
-# 	state &= ~(3<<(2*(i-1)))
-# 	state |= (a<<(2*(i-1)))
-#
-# 	j=i+1
-# 	state &= ~(3<<(2*(j-1)))
-# 	state |= (b<<(2*(j-1)))
-#
-# 	if (state==0) && (isodd(trailingXs((ind-1)&(4^L-1),L)) || (iseven(L) && ((ind-1)&(4^L-1))==1))
-# 		state = 1
-# 	end
-#
-# 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
-# end
-#
-# function zip!(C,B,i::Int64)
-# 	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
-# 		C[ind] = 0
-# 	end
-# 	Threads.@threads for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
-# 		if B[ind] == 0
-# 			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
-# 			continue
-# 		end
-#
-# 		e1 = Int64(edgeAtDrapeMapping_[ind])
-#
-# 		# start = ((ind-1)>>(2*(L+2))) & 3
-# 		# e1 = (edgeStateMapping_[1+((ind-1)&(4^(L+2)-1))] >> 3*(i-1)) & 7
-# 		# e1 = add(e1, start)
-# 		#
-# 		# if e1!=e1True
-# 		# 	println(e1, e1True, ind)
-# 		# 	error("")
-# 		# end
-#
-# 		# edgeState = extendedEdgeStateMapping_[ind]
-# 		# j = i
-# 		# e1 = (edgeState>>(3*(j-1)))&7
-# 		# j += 1
-# 		# e2 = (edgeState>>(3*(j-1)))&7
-# 		# j += 1
-# 		# e3 = (edgeState>>(3*(j-1)))&7
-#
-# 		state = stateFromInd(ind,L+2)
-# 		s1,s2 = localStatePair(state,i,L+2)
-#
-# 		# if (e2 != nextEdge(e1,s1,true) || e3 != nextEdge(e2,s2,false))
-# 		# 	error("inconsistent edges")
-# 		# end
-# 		for s3 = 0 : 3
-# 			# e4 = nextEdge(e1,s3,false)
-# 			# if e4 == false
-# 			# 	continue
-# 			# end
-# 			for s4 = 0 : 3
-# 				# if (e3 != nextEdge(e4,s4,true))
-# 				# 	continue
-# 				# end
-# 				ni = ZipInd(ind,(s3,s4))
-# 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-# 					# || mainFlag(extendedFusionFlag_,ni,L+2)!=0
-# 					# FSymbol(4,e1,4,e3,e2,e4)==0
-# 					continue
-# 				end
-# 				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[ind]
-# 			end
-# 		end
-# 	end
-# end
-#
-# function Detach!(C,B)
-# 	Threads.@threads for ind = 1 : 4^L
-# 		C[ind] = 0
-# 	end
-# 	Threads.@threads for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-# 		if B[ind] == 0
-# 			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
-# 			continue
-# 		end
-#
-# 		state = stateFromInd(ind,L+2)
-# 		ni = 1+(state&(4^L-1))
-# 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
-# 			ni=2
-# 		end
-# 		if mainFlag(flag_,ni,L) != 0
-# 			continue
-# 		end
-# 		s1,s2 = localStatePair(state,L+1,L+2)
-# 		if s1==inv(s2)
-# 			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
-# 				if (s1,s2)==sXX
-# 					C[ni] += ζ * B[ind]
-# 				end
-# 			else
-# 				if (s1,s2)==sXX
-# 					C[ni] += B[ind]
-# 				else
-# 					C[ni] += √ζ * B[ind]
-# 				end
-# 			end
-# 		end
-# 	end
-# end
-#
-# ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
-# for i = 1 : L
-# 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-# end
-# ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-#
-# # TODO Is there more efficient way than converting to Matrix and then eigen?
-#
-# function diagonalizeHTρ(e,v,T,ρ)
-# 	println()
-# 	println("diagonalizing H,T,ρ...")
-#
-# 	@time smallH = diagm(e)
-# 	@time smallT = adjoint(v)*T*v
-# 	@time smallρ = adjoint(v)*ρ*v
-# 	# smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=3,which=:SR)
-# 	small = smallH+smallT+smallρ
-# 	@time smalle,smallv = eigs_ArnoldiMethod(small)
-#
-# 	# smallH = Matrix(diagm(e))
-# 	# smallT = Matrix(adjoint(v)*T*v)
-# 	# smallρ = Matrix(adjoint(v)*ρ*v)
-# 	# # smalle,smallv = eigen(smallH+smallT+smallρ)
-# 	#
-# 	# Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# 	# Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-# 	# Ps = real(map(log,Ts)/(2*π*im))*L
-# 	# ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-# 	# HPρs = hcat(Hs,Ps,ρs)
-# 	# HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-# 	# s=""
-# 	# s*=string(HPρs[1][1])
-# 	# print(mathematicaMatrix(HPρs))
-# end
-#
-# # diagonalizeHTρ(e,v,T,ρ)
-#
-# # function buildH(diag,flag)
-# # 	col=Int64[]
-# # 	row=Int64[]
-# # 	val=Float64[]
-# # 	for preind = 1 : len
-# # 		ind = basis[preind]
-# # 		state=stateFromInd(ind)
-# # 		append!(col,[preind])
-# # 		append!(row,[preind])
-# # 		append!(val,[diag[ind]])
-# # 		for i = 1 : L
-# # 			sp=localStatePair(state,i)
-# # 			if sp==sXX  && isρ1ρ(flag,ind,i)
-# #
-# # 				append!(col,[preind,preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
-# # 				append!(val,-ξ .* [y1,y2,x])
-# #
-# # 			elseif sp==sPM
-# #
-# # 				append!(col,[preind,preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
-# # 				append!(val,-y1 .* [ξ,y2,x])
-# #
-# # 			elseif sp==sMP
-# #
-# # 				append!(col,[preind,preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
-# # 				append!(val,-y2 .* [ξ,y1,x])
-# #
-# # 			elseif sp==s00
-# #
-# # 				append!(col,[preind,preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
-# # 				append!(val,-x .* [ξ,y1,y2])
-# #
-# # 			elseif sp==s0P
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
-# # 				append!(val,-y1 .* [y2,z])
-# #
-# # 			elseif sp==sP0
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
-# # 				append!(val,-y2 .* [y1,z])
-# #
-# # 			elseif sp==sMM
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
-# # 				append!(val,-z .* [y1,y2])
-# #
-# # 			elseif sp==s0M
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
-# # 				append!(val,-y2 .* [y1,z])
-# #
-# # 			elseif sp==sM0
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
-# # 				append!(val,-y1 .* [y2,z])
-# #
-# # 			elseif sp==sPP
-# #
-# # 				append!(col,[preind,preind])
-# # 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
-# # 				append!(val,-z .* [y2,y1])
-# #
-# # 			end
-# # 		end
-# # 	end
-# # 	return sparse(row,col,val)
-# # end
-# #
-# # println("build H...")
-# # @time H=buildH(diag_,flag_)
-#
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
-#
-# const nev = 8
-#
-# function eigs_ArnoldiMethod(H)
-# 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
-# 	e,v = ArnoldiMethod.partialeigen(decomp)
-# 	return e,v
-# end
-#
-# # println("using Arpack:")
-# # @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-# # @time diagonalizeHTρ(e,v,T,ρ)
-#
+# println("build H...")
+# @time H=buildH(diag_,flag_)
+
+H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+
+const nev = 8
+
+function eigs_ArnoldiMethod(H)
+	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
+	e,v = ArnoldiMethod.partialeigen(decomp)
+	return e,v
+end
+
+println("using Arpack:")
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+@time diagonalizeHTρ(e,v,T,ρ)
+
 # println("Sparse:")
 # @time H = SparseArrays.sparse(H)
 # @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-#
-# # println("using ArnoldiMethod:")
-# # @time e,v = eigs_ArnoldiMethod(H)
-# # @time diagonalizeHTρ(e,v,T,ρ)
+
+println("using ArnoldiMethod:")
+@time e,v = eigs_ArnoldiMethod(H)
+@time diagonalizeHTρ(e,v,T,ρ)
