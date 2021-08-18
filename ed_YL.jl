@@ -383,8 +383,8 @@ Threads.@threads for i = 1 : 4^L
 	computeDiag!(diag_,flag_,i)
 end
 
-# const basis = filter(x -> (mainFlag(flag_,x)==0),1:4^L)
-const basis = filter(x -> true,1:4^L)
+const basis = filter(x -> (mainFlag(flag_,x)==0),1:4^L)
+# const basis = filter(x -> true,1:4^L)
 const len = length(basis)
 const fromInd = Dict((basis[x],x) for x in 1:len)
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
@@ -457,11 +457,11 @@ function Hfunc!(C,B,diag::Vector{Float64},flag::Vector{Int64})
 	end
 end
 
-# println()
-# println("computing eigenvalues...")
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),4^L,ismutating=true,issymmetric=true,isposdef=false)
-# @time e,v = eigs(H,nev=10,which=:SR)
-# println(sort(e))
+println()
+println("computing eigenvalues...")
+H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+@time e,v = eigs(H,nev=8,which=:SR)
+println(sort(e))
 
 #=
 
@@ -485,12 +485,13 @@ function Tind(ind::Int64,L::Int64,right::Bool)
 end
 
 function Tfunc!(C::Vector{Float64},B::Vector{Float64},L::Int64=L,right::Bool=true)
-	Threads.@threads for ind = 1 : 4^L
-		C[ind] = B[Tind(ind,L,right)]
+	Threads.@threads for preind = 1 : len
+		ind = basis[preind]
+		C[preind] = B[fromInd[Tind(ind,L,right)]]
 	end
 end
 
-T=LinearMap((C,B)->Tfunc!(C,B),4^L,ismutating=true,issymmetric=false,isposdef=false)
+T=LinearMap((C,B)->Tfunc!(C,B),len,ismutating=true,issymmetric=false,isposdef=false)
 
 
 # Print as mathematica array to reuse Mathematica code for making plots.
@@ -537,7 +538,7 @@ function diagonalizeHT(e,v,T)
 	println(mathematicaMatrix(HPs))
 end
 
-# diagonalizeHT(e,v,T)
+diagonalizeHT(e,v,T)
 
 #=
 A fusionFlag retains the information of whether main flag is 0 to save memory.
@@ -1038,42 +1039,43 @@ function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
 end
 
+zipBases = []
+zipLen = []
+zipFromInd = []
+
+for i = 1 : L+1
+	append!(zipBases, [ filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2)) ])
+	append!(zipLen, length(zipBases[i]))
+ 	append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1:zipLen[i]) ] )
+end
+
+attachPreind(ind,sp,start,L) = zipFromInd[1][attachInd(ind,sp,start,L)]
+
 function attach!(C,B)
-	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
-		C[ind] = 0
+	# for ind = 1 : 4^(L+3)*(L+2)
+		# C[ind] = 0
+	# end
+	for preind = 1 : zipLen[1]
+		C[preind] = 0
 	end
-	Threads.@threads for ind = 1 : 4^L
-		if B[ind] == 0 || mainFlag(flag_,ind,L) != 0
+	for preind = 1 : len
+		ind = basis[preind]
+		if B[preind] == 0 || mainFlag(flag_,ind,L) != 0
 			continue
 		end
 		state = stateFromInd(ind)
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
-			ni = attachInd(ind,sXX,0)
-			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-			# 	error("disallowed state")
-			# end
-			C[ni] += B[ind]
+			ni = attachPreind(ind,sXX,0,L+2)
+			C[ni] += B[preind]
 		else
-			ni = attachInd(ind,sXX,0)
-			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-			# 	error("disallowed state")
-			# end
-			C[ni] += 1/ζ * B[ind]
-			ni = attachInd(ind,s00,0)
-			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-			# 	error("disallowed state")
-			# end
-			C[ni] += ξ * B[ind]
-			ni = attachInd(ind,sPM,1)
-			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-			# 	error("disallowed state")
-			# end
-			C[ni] += ξ * B[ind]
-			ni = attachInd(ind,sMP,2)
-			# if mainFlag(extendedFusionFlag_,ni,L+2) != 0
-			# 	error("disallowed state")
-			# end
-			C[ni] += ξ * B[ind]
+			ni = attachPreind(ind,sXX,0,L+2)
+			C[ni] += 1/ζ * B[preind]
+			ni = attachPreind(ind,s00,0,L+2)
+			C[ni] += ξ * B[preind]
+			ni = attachPreind(ind,sPM,1,L+2)
+			C[ni] += ξ * B[preind]
+			ni = attachPreind(ind,sMP,2,L+2)
+			C[ni] += ξ * B[preind]
 		end
 	end
 end
@@ -1107,12 +1109,15 @@ function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
+ZipPreind(i,ind,sp,L) = zipFromInd[i][ZipInd(ind,sp,L)]
+
 function zip!(C,B,i::Int64)
-	Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
-		C[ind] = 0
+	for preind = 1 : zipLen[i+1]
+		C[preind] = 0
 	end
-	Threads.@threads for ind = 4^(L+3)*i+1 : 4^(L+3)*(i+1)
-		if B[ind] == 0
+	for preind = 1 : zipLen[i]
+		ind = zipBases[i][preind]
+		if B[preind] == 0
 			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
@@ -1151,24 +1156,28 @@ function zip!(C,B,i::Int64)
 				# if (e3 != nextEdge(e4,s4,true))
 				# 	continue
 				# end
-				ni = ZipInd(ind,(s3,s4))
 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
 					# || mainFlag(extendedFusionFlag_,ni,L+2)!=0
 					# FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
 				end
-				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[ind]
+				# println(i+1, " ", ind, " ", (s3,s4), " ", L+2)
+				# println(stringFromState(ind-1,L+2))
+				# println(stringFromState(ZipInd(ind,(s3,s4),L+2)-1,L+2))
+				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
+				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 			end
 		end
 	end
 end
 
 function Detach!(C,B)
-	Threads.@threads for ind = 1 : 4^L
-		C[ind] = 0
+	for preind = 1 : len
+		C[preind] = 0
 	end
-	Threads.@threads for ind = 4^(L+3)*(L+1)+1 : 4^(L+3)*(L+2)
-		if B[ind] == 0
+	for preind = 1 : zipLen[L]
+		ind = zipBases[L+1][preind]
+		if B[preind] == 0
 			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
@@ -1181,28 +1190,35 @@ function Detach!(C,B)
 		if mainFlag(flag_,ni,L) != 0
 			continue
 		end
+		ni = fromInd[ni]
 		s1,s2 = localStatePair(state,L+1,L+2)
 		if s1==inv(s2)
 			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
 				if (s1,s2)==sXX
-					C[ni] += ζ * B[ind]
+					C[ni] += ζ * B[preind]
 				end
 			else
 				if (s1,s2)==sXX
-					C[ni] += B[ind]
+					C[ni] += B[preind]
 				else
-					C[ni] += √ζ * B[ind]
+					C[ni] += √ζ * B[preind]
 				end
 			end
 		end
 	end
 end
 
-ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
+ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
 for i = 1 : L
-	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
 end
-ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+
+# ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
+# for i = 1 : L
+# 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+# end
+# ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 
 # TODO Is there more efficient way than converting to Matrix and then eigen?
 
