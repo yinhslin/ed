@@ -7,7 +7,7 @@ using Arpack
 
 # BLAS.set_num_threads(48);
 
-const L=6
+const L=12
 
 #=
 
@@ -384,7 +384,6 @@ Threads.@threads for i = 1 : 4^L
 end
 
 const basis = filter(x -> (mainFlag(flag_,x)==0),1:4^L)
-# const basis = filter(x -> true,1:4^L)
 const len = length(basis)
 const fromInd = Dict((basis[x],x) for x in 1:len)
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
@@ -460,7 +459,7 @@ end
 println()
 println("computing eigenvalues...")
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=8,which=:SR)
+@time e,v = eigs(H,nev=3,which=:SR)
 println(sort(e))
 
 #=
@@ -541,7 +540,7 @@ end
 diagonalizeHT(e,v,T)
 
 #=
-A fusionFlag retains the information of whether main flag is 0 to save memory.
+A fusionFlag retains the information of whether main flag is 0.
 =#
 function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
 	state=ind-1
@@ -666,8 +665,8 @@ end
 
 function setExtendedFusionFlagRecursive!(flag::Vector{Bool},L::Int64)
 	Threads.@threads for below = 0 : L-1
-		for start = 0 : 3
-			for ministate = 0 : 3
+		Threads.@threads for start = 0 : 3
+			Threads.@threads for ministate = 0 : 3
 				state = ministate + (start << (2*L)) + (below << (2*(L+1)))
 				setFusionFlagRecursive!(flag,state,0,start,true,true,L)
 				setFusionFlagRecursive!(flag,state,0,start,false,false,L)
@@ -677,16 +676,15 @@ function setExtendedFusionFlagRecursive!(flag::Vector{Bool},L::Int64)
 end
 
 println("preparing fusion flags...")
-
 println("original...")
 fusionFlag_ = zeros(Bool,4^L)
 @time Threads.@threads for i = 1 : 4^L
 	setFusionFlag!(fusionFlag_,i,L)
 end
-
 println("recursive...")
 fusionFlagRecursive_ = zeros(Bool,4^L)
 @time setFusionFlagRecursive!(fusionFlagRecursive_,L)
+println()
 
 # println("compare...")
 # Threads.@threads for ind = 1 : 4^L
@@ -696,16 +694,15 @@ fusionFlagRecursive_ = zeros(Bool,4^L)
 # end
 
 println("preparing extended fusion flags...")
-
 println("original...")
 extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
 @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 	setFusionFlag!(extendedFusionFlag_,i,L+2)
 end
-
 println("recursive...")
 extendedFusionFlagRecursive_ = zeros(Bool,4^(L+3)*(L+2))
 @time setExtendedFusionFlagRecursive!(extendedFusionFlagRecursive_,L+2)
+println()
 
 # println("compare...")
 # Threads.@threads for ind = 1 : 4^(L+3)*(L+2)
@@ -738,6 +735,16 @@ How many nearby anyon labels to keep (1,2,3) depends on time vs memory.
 
 const edgeMapping=Dict('1'=>1, 'a'=>2, 'b'=>3, 'ρ'=>4, 'σ'=>5, 'τ'=>6)
 const edgeRevmapping=Dict(1=>'1', 2=>'a', 3=>'b', 4=>'ρ', 5=>'σ', 6=>'τ')
+
+function stringFromEdgeState(edgeState::Int64,L::Int64=L)
+	s=""
+	t=edgeRevmapping[(edgeState&7)]
+	for i in 1 : L
+		s*=edgeRevmapping[(edgeState&7)]
+		edgeState>>=3
+	end
+	return s*t
+end
 
 # TODO Recursive?
 function setEdgeStateMapping!(edgeStateMapping::Vector{Int64},ind::Int64,flag::Vector{Bool},L::Int64=L)
@@ -777,16 +784,6 @@ function setEdgeStateMapping!(edgeStateMapping::Vector{Int64},ind::Int64,flag::V
 	# revEdgeStateMapping[edgeStateMapping[ind]] = ind
 end
 
-function stringFromEdgeState(edgeState::Int64,L::Int64=L)
-	s=""
-	t=edgeRevmapping[(edgeState&7)]
-	for i in 1 : L
-		s*=edgeRevmapping[(edgeState&7)]
-		edgeState>>=3
-	end
-	return s*t
-end
-
 # TODO Recursive?
 # function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,flag::Vector{Bool},L::Int64=L)
 function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
@@ -821,12 +818,12 @@ function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::I
 end
 
 # revEdgeStateMapping_ = zeros(Int64,8^L)
-println()
 println("preparing edge state mapping...")
 edgeStateMapping_ = zeros(Int64,4^L)
 @time Threads.@threads for i = 1 : 4^L
 	setEdgeStateMapping!(edgeStateMapping_,i,fusionFlag_,L)
 end
+println()
 
 # println()
 # println("preparing extended edge state mapping...")
@@ -836,13 +833,13 @@ end
 # 	setEdgeStateMapping!(extendedEdgeStateMapping_,i,extendedFusionFlag_,L+2)
 # end
 
-println()
 println("preparing edge at drape mapping...")
 edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
 @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 	# setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,extendedFusionFlag_,L+2)
 	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
 end
+println()
 
 
 #=
@@ -1003,6 +1000,21 @@ TODO Use fusion space basis and encode each linear map as a sparse array.
 
 =#
 
+# Precompute fusion space basis
+println("precompute fusion space bases for zipper...")
+zipBases = []
+zipLen = []
+zipFromInd = []
+for i = 1 : L+1
+	print("\r",i,"/",L+1)
+	append!(zipBases, [ filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2)) ])
+	append!(zipLen, length(zipBases[i]))
+ 	append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1:zipLen[i]) ] )
+end
+println()
+println()
+
+# Only used in one place, can remove
 # Inverse of index: x->x, 0->0, ±->∓
 function inv(ind::Int64)
 	if ind==2
@@ -1037,16 +1049,6 @@ function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	end
 
 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
-end
-
-zipBases = []
-zipLen = []
-zipFromInd = []
-
-for i = 1 : L+1
-	append!(zipBases, [ filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2)) ])
-	append!(zipLen, length(zipBases[i]))
- 	append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1:zipLen[i]) ] )
 end
 
 attachPreind(ind,sp,start,L) = zipFromInd[1][attachInd(ind,sp,start,L)]
@@ -1208,11 +1210,13 @@ function Detach!(C,B)
 	end
 end
 
+println("creating zipper by composition...")
 ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
 for i = 1 : L
 	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
 end
 ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+println()
 
 # ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
 # for i = 1 : L
@@ -1334,7 +1338,7 @@ end
 
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 
-const nev = 8
+const nev = 3
 
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
