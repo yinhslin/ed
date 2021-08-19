@@ -325,58 +325,6 @@ function newInd(state::Int64,i::Int64,sp::Tuple{Int64, Int64})
 	end
 end
 
-const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, true}
-
-# function Hfunc!(C,B,diag::Vector{Float64},flag::Vector{Int64})
-# 	Threads.@threads for ind = 1 : 4^L
-# 		C[ind] = diag[ind] * B[ind]
-# 	end
-# 	Threads.@threads for ind = 1 : 4^L
-# 		if  mainFlag(flag,ind) !=0
-# 			continue
-# 		end
-# 		state=stateFromInd(ind)
-# 		for i = 1 : L
-# 			sp=localStatePair(state,i)
-# 			if sp==sXX  && isρ1ρ(flag,ind,i)
-# 				C[newInd(state,i,sPM)] -= ξ * y1 * B[ind]
-# 				C[newInd(state,i,sMP)] -= ξ * y2 * B[ind]
-# 				C[newInd(state,i,s00)] -= ξ * x * B[ind]
-# 			elseif sp==sPM
-# 				C[newInd(state,i,sXX)] -= y1 * ξ * B[ind]
-# 				C[newInd(state,i,sMP)] -= y1 * y2 * B[ind]
-# 				C[newInd(state,i,s00)] -= y1 * x * B[ind]
-# 			elseif sp==sMP
-# 				C[newInd(state,i,sXX)] -= y2 * ξ * B[ind]
-# 				C[newInd(state,i,sPM)] -= y2 * y1 * B[ind]
-# 				C[newInd(state,i,s00)] -= y2 * x * B[ind]
-# 			elseif sp==s00
-# 				C[newInd(state,i,sXX)] -= x * ξ * B[ind]
-# 				C[newInd(state,i,sPM)] -= x * y1 * B[ind]
-# 				C[newInd(state,i,sMP)] -= x * y2 * B[ind]
-# 			elseif sp==s0P
-# 				C[newInd(state,i,sP0)] -= y1 * y2 * B[ind]
-# 				C[newInd(state,i,sMM)] -= y1 * z * B[ind]
-# 			elseif sp==sP0
-# 				C[newInd(state,i,s0P)] -= y2 * y1 * B[ind]
-# 				C[newInd(state,i,sMM)] -= y2 * z * B[ind]
-# 			elseif sp==sMM
-# 				C[newInd(state,i,s0P)] -= z * y1 * B[ind]
-# 				C[newInd(state,i,sP0)] -= z * y2 * B[ind]
-# 			elseif sp==s0M
-# 				C[newInd(state,i,sM0)] -= y2 * y1 * B[ind]
-# 				C[newInd(state,i,sPP)] -= y2 * z * B[ind]
-# 			elseif sp==sM0
-# 				C[newInd(state,i,s0M)] -= y1 * y2 * B[ind]
-# 				C[newInd(state,i,sPP)] -= y1 * z * B[ind]
-# 			elseif sp==sPP
-# 				C[newInd(state,i,s0M)] -= z * y2 * B[ind]
-# 				C[newInd(state,i,sM0)] -= z * y1 * B[ind]
-# 			end
-# 		end
-# 	end
-# end
-
 println()
 println("available number of threads: ", Threads.nthreads())
 println()
@@ -539,11 +487,11 @@ function buildH(diag,flag)
 end
 
 println("build H...")
+# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 @time H=buildH(diag_,flag_)
 println()
 
 println("computing eigenvalues...")
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 println(sort(e))
 println()
@@ -1093,7 +1041,6 @@ zipLen = fill(0, L+1)
 zipFromInd = fill(Dict(), L+1)
 # TODO somehow not really parallelized
 Threads.@threads for i = 1 : L+1
-	# print("\r",i,"/",L+1)
 	println(i,"/",L+1)
 	@time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
 	zipLen[i] = length(zipBases[i])
@@ -1102,7 +1049,6 @@ Threads.@threads for i = 1 : L+1
 	# append!(zipLen, length(zipBases[i]))
  	# append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1 : zipLen[i]) ] )
 end
-# println()
 println()
 
 # Only used in one place, can remove
@@ -1145,17 +1091,12 @@ end
 attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[1][attachInd(ind,sp,start,L)]
 
 function attach!(C::Vector{Float64},B::Vector{Float64})
-	# for ind = 1 : 4^(L+3)*(L+2)
-		# C[ind] = 0
-	# end
 	for preind = 1 : zipLen[1]
 		C[preind] = 0
 	end
 	for preind = 1 : len
 		ind = basis[preind]
 		if B[preind] == 0
-			# TODO
-			# || mainFlag(flag_,ind,L) != 0
 			continue
 		end
 		state = stateFromInd(ind)
@@ -1184,28 +1125,23 @@ function buildAttach()
 		state = stateFromInd(ind)
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = attachPreind(ind,sXX,0,L+2)
-			# C[ni] += B[preind]
 			append!(col,[preind])
 			append!(row,[ni])
 			append!(val,[1])
 		else
 			ni = attachPreind(ind,sXX,0,L+2)
-			# C[ni] += 1/ζ * B[preind]
 			append!(col,[preind])
 			append!(row,[ni])
 			append!(val,[1/ζ])
 			ni = attachPreind(ind,s00,0,L+2)
-			# C[ni] += ξ * B[preind]
 			append!(col,[preind])
 			append!(row,[ni])
 			append!(val,[ξ])
 			ni = attachPreind(ind,sPM,1,L+2)
-			# C[ni] += ξ * B[preind]
 			append!(col,[preind])
 			append!(row,[ni])
 			append!(val,[ξ])
 			ni = attachPreind(ind,sMP,2,L+2)
-			# C[ni] += ξ * B[preind]
 			append!(col,[preind])
 			append!(row,[ni])
 			append!(val,[ξ])
@@ -1255,52 +1191,16 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	for preind = 1 : zipLen[i]
 		ind = zipBases[i][preind]
 		if B[preind] == 0
-			 # || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
-
 		e1 = Int64(edgeAtDrapeMapping_[ind])
-
-		# start = ((ind-1)>>(2*(L+2))) & 3
-		# e1 = (edgeStateMapping_[1+((ind-1)&(4^(L+2)-1))] >> 3*(i-1)) & 7
-		# e1 = add(e1, start)
-		#
-		# if e1!=e1True
-		# 	println(e1, e1True, ind)
-		# 	error("")
-		# end
-
-		# edgeState = extendedEdgeStateMapping_[ind]
-		# j = i
-		# e1 = (edgeState>>(3*(j-1)))&7
-		# j += 1
-		# e2 = (edgeState>>(3*(j-1)))&7
-		# j += 1
-		# e3 = (edgeState>>(3*(j-1)))&7
-
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
-
-		# if (e2 != nextEdge(e1,s1,true) || e3 != nextEdge(e2,s2,false))
-		# 	error("inconsistent edges")
-		# end
 		for s3 = 0 : 3
-			# e4 = nextEdge(e1,s3,false)
-			# if e4 == false
-			# 	continue
-			# end
 			for s4 = 0 : 3
-				# if (e3 != nextEdge(e4,s4,true))
-				# 	continue
-				# end
 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-					# || mainFlag(extendedFusionFlag_,ni,L+2)!=0
-					# FSymbol(4,e1,4,e3,e2,e4)==0
 					continue
 				end
-				# println(i+1, " ", ind, " ", (s3,s4), " ", L+2)
-				# println(stringFromState(ind-1,L+2))
-				# println(stringFromState(ZipInd(ind,(s3,s4),L+2)-1,L+2))
 				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
 				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 			end
@@ -1326,7 +1226,6 @@ function buildZip(i::Int64)
 					continue
 				end
 				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
-				# C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 				# col[((preind-1)<<4)+(s3<<2)+s4+1] = preind
 				# row[((preind-1)<<4)+(s3<<2)+s4+1] = ni
 				# val[((preind-1)<<4)+(s3<<2)+s4+1] = FSymbolZipper(e1,s1,s2,s3,s4)
@@ -1349,10 +1248,8 @@ function Detach!(C::Vector{Float64},B::Vector{Float64})
 	for preind = 1 : zipLen[L]
 		ind = zipBases[L+1][preind]
 		if B[preind] == 0
-			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
 			continue
 		end
-
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
@@ -1398,19 +1295,16 @@ function buildDetach()
 		if s1==inv(s2)
 			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
 				if (s1,s2)==sXX
-					# C[ni] += ζ * B[preind]
 					append!(col,[preind])
 					append!(row,[ni])
 					append!(val,[ζ])
 				end
 			else
 				if (s1,s2)==sXX
-					# C[ni] += B[preind]
 					append!(col,[preind])
 					append!(row,[ni])
 					append!(val,[1])
 				else
-					# C[ni] += √ζ * B[preind]
 					append!(col,[preind])
 					append!(row,[ni])
 					append!(val,[√ζ])
@@ -1450,14 +1344,6 @@ println("build detach...")
 @time ρ = LinearMap(buildDetach()) * ρ
 println()
 
-# ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
-# for i = 1 : L
-# 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-# end
-# ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-
-# TODO Is there more efficient way than converting to Matrix and then eigen?
-
 function diagonalizeHTρ(e,v,T,ρ)
 	println()
 	println("diagonalizing H,T,ρ...")
@@ -1485,10 +1371,6 @@ function diagonalizeHTρ(e,v,T,ρ)
 	print(mathematicaMatrix(HPρs))
 end
 
-# diagonalizeHTρ(e,v,T,ρ)
-
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
-
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
 	e,v = ArnoldiMethod.partialeigen(decomp)
@@ -1498,10 +1380,6 @@ end
 println("using Arpack:")
 @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 @time diagonalizeHTρ(e,v,T,ρ)
-
-# println("Sparse:")
-# @time H = SparseArrays.sparse(H)
-# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 
 # println("using ArnoldiMethod:")
 # @time e,v = eigs_ArnoldiMethod(H)
