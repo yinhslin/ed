@@ -5,7 +5,11 @@ using Arpack
 # using Profile
 # using Traceur
 
-const L=9
+BLAS.set_num_threads(48)
+
+const L = 15
+
+const nev = 1
 
 #=
 
@@ -374,12 +378,14 @@ const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, tr
 # end
 
 println()
-println("available number of threads:", Threads.nthreads())
+println("available number of threads: ", Threads.nthreads())
+println()
 println("preparing...")
 Threads.@threads for i = 1 : 4^L
 	setFlag!(flag_,i)
 	computeDiag!(diag_,flag_,i)
 end
+println()
 
 const basis = filter(x -> (mainFlag(flag_,x)==0),1:4^L)
 const len = length(basis)
@@ -534,12 +540,13 @@ end
 
 println("build H...")
 @time H=buildH(diag_,flag_)
-
 println()
+
 println("computing eigenvalues...")
 # H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
-@time e,v = eigs(H,nev=3,which=:SR)
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 println(sort(e))
+println()
 
 #=
 
@@ -745,7 +752,7 @@ end
 function setExtendedFusionFlagRecursive!(flag::Vector{Bool},L::Int64)
 	Threads.@threads for below = 0 : L-1
 		Threads.@threads for start = 0 : 3
-			Threads.@threads for ministate = 0 : 3
+			for ministate = 0 : 3
 				state = ministate + (start << (2*L)) + (below << (2*(L+1)))
 				setFusionFlagRecursive!(flag,state,0,start,true,true,L)
 				setFusionFlagRecursive!(flag,state,0,start,false,false,L)
@@ -760,9 +767,9 @@ fusionFlag_ = zeros(Bool,4^L)
 @time Threads.@threads for i = 1 : 4^L
 	setFusionFlag!(fusionFlag_,i,L)
 end
-println("recursive...")
-fusionFlagRecursive_ = zeros(Bool,4^L)
-@time setFusionFlagRecursive!(fusionFlagRecursive_,L)
+# println("recursive...")
+# fusionFlagRecursive_ = zeros(Bool,4^L)
+# @time setFusionFlagRecursive!(fusionFlagRecursive_,L)
 println()
 
 # println("compare...")
@@ -778,9 +785,9 @@ extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
 @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
 	setFusionFlag!(extendedFusionFlag_,i,L+2)
 end
-println("recursive...")
-extendedFusionFlagRecursive_ = zeros(Bool,4^(L+3)*(L+2))
-@time setExtendedFusionFlagRecursive!(extendedFusionFlagRecursive_,L+2)
+# println("recursive...")
+# extendedFusionFlagRecursive_ = zeros(Bool,4^(L+3)*(L+2))
+# @time setExtendedFusionFlagRecursive!(extendedFusionFlagRecursive_,L+2)
 println()
 
 # println("compare...")
@@ -1081,16 +1088,21 @@ TODO Use fusion space basis and encode each linear map as a sparse array.
 
 # Precompute fusion space basis
 println("precompute fusion space bases for zipper...")
-zipBases = []
-zipLen = []
-zipFromInd = []
-for i = 1 : L+1
-	print("\r",i,"/",L+1)
-	append!(zipBases, [ filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2)) ])
-	append!(zipLen, length(zipBases[i]))
- 	append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1:zipLen[i]) ] )
+zipBases = fill([], L+1)
+zipLen = fill(0, L+1)
+zipFromInd = fill(Dict(), L+1)
+# TODO somehow not really parallelized
+Threads.@threads for i = 1 : L+1
+	# print("\r",i,"/",L+1)
+	println(i,"/",L+1)
+	@time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
+	zipLen[i] = length(zipBases[i])
+	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
+	# append!(zipBases, [ filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2)) ])
+	# append!(zipLen, length(zipBases[i]))
+ 	# append!(zipFromInd, [ Dict((zipBases[i][x],x) for x in 1 : zipLen[i]) ] )
 end
-println()
+# println()
 println()
 
 # Only used in one place, can remove
@@ -1141,7 +1153,9 @@ function attach!(C::Vector{Float64},B::Vector{Float64})
 	end
 	for preind = 1 : len
 		ind = basis[preind]
-		if B[preind] == 0 || mainFlag(flag_,ind,L) != 0
+		if B[preind] == 0
+			# TODO
+			# || mainFlag(flag_,ind,L) != 0
 			continue
 		end
 		state = stateFromInd(ind)
@@ -1197,6 +1211,9 @@ function buildAttach()
 			append!(val,[ξ])
 		end
 	end
+	append!(col,[len])
+	append!(row,[zipLen[1]])
+	append!(val,[0])
 	return sparse(row,col,val)
 end
 
@@ -1295,6 +1312,9 @@ function buildZip(i::Int64)
 	col=Int64[]
 	row=Int64[]
 	val=Float64[]
+	# col=fill(0,zipLen[i]*16)
+	# row=fill(0,zipLen[i]*16)
+	# val=fill(0.0,zipLen[i]*16)
 	for preind = 1 : zipLen[i]
 		ind = zipBases[i][preind]
 		e1 = Int64(edgeAtDrapeMapping_[ind])
@@ -1307,12 +1327,18 @@ function buildZip(i::Int64)
 				end
 				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
 				# C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
+				# col[((preind-1)<<4)+(s3<<2)+s4+1] = preind
+				# row[((preind-1)<<4)+(s3<<2)+s4+1] = ni
+				# val[((preind-1)<<4)+(s3<<2)+s4+1] = FSymbolZipper(e1,s1,s2,s3,s4)
 				append!(col,[preind])
 				append!(row,[ni])
 				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
 			end
 		end
 	end
+	append!(col,[zipLen[i]])
+	append!(row,[zipLen[i+1]])
+	append!(val,[0])
 	return sparse(row,col,val)
 end
 
@@ -1399,17 +1425,29 @@ function buildDetach()
 end
 
 println("creating zipper by composition...")
-# ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
 println("build attach...")
+# @time ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
 @time ρ = LinearMap(buildAttach())
+
+# for i = 1 : L
+# 	println("build zip ", i, "...")
+# 	@time global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+# 	# @time global ρ = LinearMap(buildZip(i)) * ρ
+# end
+
+zips = fill(ρ, L+1)
 for i = 1 : L
 	println("build zip ", i, "...")
-	# global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
-	global ρ = LinearMap(buildZip(i)) * ρ
+	@time global zips[i] = LinearMap(buildZip(i))
 end
+println("multiply zip...")
+@time for i = 1 : L
+	global ρ = zips[i] * ρ
+end
+
 println("build detach...")
-# ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
-ρ = LinearMap(buildDetach()) * ρ
+# @time ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+@time ρ = LinearMap(buildDetach()) * ρ
 println()
 
 # ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
@@ -1424,17 +1462,17 @@ function diagonalizeHTρ(e,v,T,ρ)
 	println()
 	println("diagonalizing H,T,ρ...")
 
-	@time smallH = diagm(e)
-	@time smallT = adjoint(v)*T*v
-	@time smallρ = adjoint(v)*ρ*v
-	# smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=3,which=:SR)
-	small = smallH+smallT+smallρ
-	@time smalle,smallv = eigs_ArnoldiMethod(small)
+	# smallH = diagm(e)
+	# smallT = adjoint(v)*T*v
+	# smallρ = adjoint(v)*ρ*v
+	# # smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=nev,which=:SR)
+	# small = smallH+smallT+smallρ
+	# @time smalle,smallv = eigs_ArnoldiMethod(small)
 
 	smallH = Matrix(diagm(e))
 	smallT = Matrix(adjoint(v)*T*v)
 	smallρ = Matrix(adjoint(v)*ρ*v)
-	# smalle,smallv = eigen(smallH+smallT+smallρ)
+	smalle,smallv = eigen(smallH+smallT+smallρ)
 
 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
 	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
@@ -1449,9 +1487,7 @@ end
 
 # diagonalizeHTρ(e,v,T,ρ)
 
-H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
-
-const nev = 3
+# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
@@ -1467,6 +1503,10 @@ println("using Arpack:")
 # @time H = SparseArrays.sparse(H)
 # @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 
-println("using ArnoldiMethod:")
-@time e,v = eigs_ArnoldiMethod(H)
-@time diagonalizeHTρ(e,v,T,ρ)
+# println("using ArnoldiMethod:")
+# @time e,v = eigs_ArnoldiMethod(H)
+# @time diagonalizeHTρ(e,v,T,ρ)
+
+# println("computing eigenvalues...")
+# @time e,v = Arpack.eigs(H+ρ,nev=nev,which=:SR)
+# println(sort(e))
