@@ -5,9 +5,7 @@ using Arpack
 # using Profile
 # using Traceur
 
-# BLAS.set_num_threads(48);
-
-const L=12
+const L=9
 
 #=
 
@@ -376,7 +374,7 @@ const Hairetsu=SubArray{Float64, 1, Vector{Float64}, Tuple{UnitRange{Int64}}, tr
 # end
 
 println()
-println("avaliable number of threads:", Threads.nthreads())
+println("available number of threads:", Threads.nthreads())
 println("preparing...")
 Threads.@threads for i = 1 : 4^L
 	setFlag!(flag_,i)
@@ -456,9 +454,90 @@ function Hfunc!(C,B,diag::Vector{Float64},flag::Vector{Int64})
 	end
 end
 
+function buildH(diag,flag)
+	col=Int64[]
+	row=Int64[]
+	val=Float64[]
+	for preind = 1 : len
+		ind = basis[preind]
+		state=stateFromInd(ind)
+		append!(col,[preind])
+		append!(row,[preind])
+		append!(val,[diag[ind]])
+		for i = 1 : L
+			sp=localStatePair(state,i)
+			if sp==sXX  && isρ1ρ(flag,ind,i)
+
+				append!(col,[preind,preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+				append!(val,-ξ .* [y1,y2,x])
+
+			elseif sp==sPM
+
+				append!(col,[preind,preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+				append!(val,-y1 .* [ξ,y2,x])
+
+			elseif sp==sMP
+
+				append!(col,[preind,preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+				append!(val,-y2 .* [ξ,y1,x])
+
+			elseif sp==s00
+
+				append!(col,[preind,preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+				append!(val,-x .* [ξ,y1,y2])
+
+			elseif sp==s0P
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
+				append!(val,-y1 .* [y2,z])
+
+			elseif sp==sP0
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
+				append!(val,-y2 .* [y1,z])
+
+			elseif sp==sMM
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
+				append!(val,-z .* [y1,y2])
+
+			elseif sp==s0M
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
+				append!(val,-y2 .* [y1,z])
+
+			elseif sp==sM0
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
+				append!(val,-y1 .* [y2,z])
+
+			elseif sp==sPP
+
+				append!(col,[preind,preind])
+				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
+				append!(val,-z .* [y2,y1])
+
+			end
+		end
+	end
+	return sparse(row,col,val)
+end
+
+println("build H...")
+@time H=buildH(diag_,flag_)
+
 println()
 println("computing eigenvalues...")
-H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 @time e,v = eigs(H,nev=3,which=:SR)
 println(sort(e))
 
@@ -1051,9 +1130,9 @@ function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
 end
 
-attachPreind(ind,sp,start,L) = zipFromInd[1][attachInd(ind,sp,start,L)]
+attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[1][attachInd(ind,sp,start,L)]
 
-function attach!(C,B)
+function attach!(C::Vector{Float64},B::Vector{Float64})
 	# for ind = 1 : 4^(L+3)*(L+2)
 		# C[ind] = 0
 	# end
@@ -1080,6 +1159,45 @@ function attach!(C,B)
 			C[ni] += ξ * B[preind]
 		end
 	end
+end
+
+function buildAttach()
+	col=Int64[]
+	row=Int64[]
+	val=Float64[]
+	for preind = 1 : len
+		ind = basis[preind]
+		state = stateFromInd(ind)
+		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
+			ni = attachPreind(ind,sXX,0,L+2)
+			# C[ni] += B[preind]
+			append!(col,[preind])
+			append!(row,[ni])
+			append!(val,[1])
+		else
+			ni = attachPreind(ind,sXX,0,L+2)
+			# C[ni] += 1/ζ * B[preind]
+			append!(col,[preind])
+			append!(row,[ni])
+			append!(val,[1/ζ])
+			ni = attachPreind(ind,s00,0,L+2)
+			# C[ni] += ξ * B[preind]
+			append!(col,[preind])
+			append!(row,[ni])
+			append!(val,[ξ])
+			ni = attachPreind(ind,sPM,1,L+2)
+			# C[ni] += ξ * B[preind]
+			append!(col,[preind])
+			append!(row,[ni])
+			append!(val,[ξ])
+			ni = attachPreind(ind,sMP,2,L+2)
+			# C[ni] += ξ * B[preind]
+			append!(col,[preind])
+			append!(row,[ni])
+			append!(val,[ξ])
+		end
+	end
+	return sparse(row,col,val)
 end
 
 function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
@@ -1111,9 +1229,9 @@ function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-ZipPreind(i,ind,sp,L) = zipFromInd[i][ZipInd(ind,sp,L)]
+ZipPreind(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][ZipInd(ind,sp,L)]
 
-function zip!(C,B,i::Int64)
+function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	for preind = 1 : zipLen[i+1]
 		C[preind] = 0
 	end
@@ -1173,7 +1291,32 @@ function zip!(C,B,i::Int64)
 	end
 end
 
-function Detach!(C,B)
+function buildZip(i::Int64)
+	col=Int64[]
+	row=Int64[]
+	val=Float64[]
+	for preind = 1 : zipLen[i]
+		ind = zipBases[i][preind]
+		e1 = Int64(edgeAtDrapeMapping_[ind])
+		state = stateFromInd(ind,L+2)
+		s1,s2 = localStatePair(state,i,L+2)
+		for s3 = 0 : 3
+			for s4 = 0 : 3
+				if FSymbolZipper(e1,s1,s2,s3,s4)==0
+					continue
+				end
+				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
+				# C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
+				append!(col,[preind])
+				append!(row,[ni])
+				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
+			end
+		end
+	end
+	return sparse(row,col,val)
+end
+
+function Detach!(C::Vector{Float64},B::Vector{Float64})
 	for preind = 1 : len
 		C[preind] = 0
 	end
@@ -1210,12 +1353,63 @@ function Detach!(C,B)
 	end
 end
 
-println("creating zipper by composition...")
-ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
-for i = 1 : L
-	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+function buildDetach()
+	col=Int64[]
+	row=Int64[]
+	val=Float64[]
+	for preind = 1 : zipLen[L]
+		ind = zipBases[L+1][preind]
+		state = stateFromInd(ind,L+2)
+		ni = 1+(state&(4^L-1))
+		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
+			ni=2
+		end
+		if mainFlag(flag_,ni,L) != 0
+			continue
+		end
+		ni = fromInd[ni]
+		s1,s2 = localStatePair(state,L+1,L+2)
+		if s1==inv(s2)
+			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+				if (s1,s2)==sXX
+					# C[ni] += ζ * B[preind]
+					append!(col,[preind])
+					append!(row,[ni])
+					append!(val,[ζ])
+				end
+			else
+				if (s1,s2)==sXX
+					# C[ni] += B[preind]
+					append!(col,[preind])
+					append!(row,[ni])
+					append!(val,[1])
+				else
+					# C[ni] += √ζ * B[preind]
+					append!(col,[preind])
+					append!(row,[ni])
+					append!(val,[√ζ])
+				end
+			end
+		end
+	end
+	append!(col,[zipLen[L]])
+	append!(row,[len])
+	append!(val,[0])
+	return sparse(row,col,val)
 end
-ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+
+println("creating zipper by composition...")
+# ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
+println("build attach...")
+@time ρ = LinearMap(buildAttach())
+for i = 1 : L
+	println("build zip ", i, "...")
+	# global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+	global ρ = LinearMap(buildZip(i)) * ρ
+end
+println("build detach...")
+# ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+ρ = LinearMap(buildDetach()) * ρ
 println()
 
 # ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
@@ -1254,87 +1448,6 @@ function diagonalizeHTρ(e,v,T,ρ)
 end
 
 # diagonalizeHTρ(e,v,T,ρ)
-
-# function buildH(diag,flag)
-# 	col=Int64[]
-# 	row=Int64[]
-# 	val=Float64[]
-# 	for preind = 1 : len
-# 		ind = basis[preind]
-# 		state=stateFromInd(ind)
-# 		append!(col,[preind])
-# 		append!(row,[preind])
-# 		append!(val,[diag[ind]])
-# 		for i = 1 : L
-# 			sp=localStatePair(state,i)
-# 			if sp==sXX  && isρ1ρ(flag,ind,i)
-#
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
-# 				append!(val,-ξ .* [y1,y2,x])
-#
-# 			elseif sp==sPM
-#
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
-# 				append!(val,-y1 .* [ξ,y2,x])
-#
-# 			elseif sp==sMP
-#
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
-# 				append!(val,-y2 .* [ξ,y1,x])
-#
-# 			elseif sp==s00
-#
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
-# 				append!(val,-x .* [ξ,y1,y2])
-#
-# 			elseif sp==s0P
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
-# 				append!(val,-y1 .* [y2,z])
-#
-# 			elseif sp==sP0
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
-# 				append!(val,-y2 .* [y1,z])
-#
-# 			elseif sp==sMM
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
-# 				append!(val,-z .* [y1,y2])
-#
-# 			elseif sp==s0M
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
-# 				append!(val,-y2 .* [y1,z])
-#
-# 			elseif sp==sM0
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
-# 				append!(val,-y1 .* [y2,z])
-#
-# 			elseif sp==sPP
-#
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
-# 				append!(val,-z .* [y2,y1])
-#
-# 			end
-# 		end
-# 	end
-# 	return sparse(row,col,val)
-# end
-#
-# println("build H...")
-# @time H=buildH(diag_,flag_)
 
 H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 
