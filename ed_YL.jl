@@ -7,8 +7,8 @@ using Arpack
 
 # BLAS.set_num_threads(48)
 
-const L = 6
-const nev = 10
+const L = 15
+const nev = 1
 
 println()
 println("exact diagonalization of L=", L, " keeping nev=", nev)
@@ -372,15 +372,11 @@ end
 
 function newInd(state::Int64,i::Int64,sp::Tuple{Int64, Int64})
 	(a,b)=sp
-
 	state &= ~(3<<(2*(i-1)))
 	state |= (a<<(2*(i-1)))
-
 	j=nextSite(i)
-
 	state &= ~(3<<(2*(j-1)))
 	state |= (b<<(2*(j-1)))
-
 	if(state!=0)
 		return 1+state
 	end
@@ -540,6 +536,7 @@ end
 # end
 
 # function buildH(diag,flag,thread)
+
 function buildH(diag,flag)
 	col=Int64[]
 	row=Int64[]
@@ -599,12 +596,115 @@ function buildH(diag,flag)
 	return sparse(row,col,val,len,len)
 end
 
+# function buildH(diag,flag)
+# 	res = sparse(Int64[],Int64[],Float64[],len,len)
+# 	for preind = 1 : len
+# 		ind = basis[preind]
+# 		state=stateFromInd(ind)
+# 		res += sparse([preind],[preind],[diag[preind]],len,len)
+# 		for i = 1 : L
+# 			sp=localStatePair(state,i)
+# 			if sp==sXX  && isρ1ρ(flag,preind,i)
+# 				res += sparse([preind,preind,preind],map(s->newPreind(state,i,s),[sPM,sMP,s00]),-ξ .* [y1,y2,x],len,len)
+# 			elseif sp==sPM
+# 				res += sparse([preind,preind,preind],map(s->newPreind(state,i,s),[sXX,sMP,s00]),-y1 .* [ξ,y2,x],len,len)
+# 			elseif sp==sMP
+# 				res += sparse([preind,preind,preind],map(s->newPreind(state,i,s),[sXX,sPM,s00]),-y2 .* [ξ,y1,x],len,len)
+# 			elseif sp==s00
+# 				res += sparse([preind,preind,preind],map(s->newPreind(state,i,s),[sXX,sPM,sMP]),-x .* [ξ,y1,y2],len,len)
+# 			elseif sp==s0P
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[sP0,sMM]),-y1 .* [y2,z],len,len)
+# 			elseif sp==sP0
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[s0P,sMM]),-y2 .* [y1,z],len,len)
+# 			elseif sp==sMM
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[s0P,sP0]),-z .* [y1,y2],len,len)
+# 			elseif sp==s0M
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[sM0,sPP]),-y2 .* [y1,z],len,len)
+# 			elseif sp==sM0
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[s0M,sPP]),-y1 .* [y2,z],len,len)
+# 			elseif sp==sPP
+# 				res += sparse([preind,preind],map(s->newPreind(state,i,s),[s0M,sM0]),-z .* [y2,y1],len,len)
+# 			end
+# 		end
+# 	end
+# 	return res
+# end
+
+# function buildH(diag,flag)
+# 	res = sparse(Int64[],Int64[],Float64[],len,len)
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	for preind = 1 : len
+# 		ind = basis[preind]
+# 		state=stateFromInd(ind)
+# 		append!(col,[preind])
+# 		append!(row,[preind])
+# 		append!(val,[diag[preind]])
+# 		for i = 1 : L
+# 			sp=localStatePair(state,i)
+# 			if sp==sXX  && isρ1ρ(flag,preind,i)
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+# 				append!(val,-ξ .* [y1,y2,x])
+# 			elseif sp==sPM
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+# 				append!(val,-y1 .* [ξ,y2,x])
+# 			elseif sp==sMP
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+# 				append!(val,-y2 .* [ξ,y1,x])
+# 			elseif sp==s00
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+# 				append!(val,-x .* [ξ,y1,y2])
+# 			elseif sp==s0P
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
+# 				append!(val,-y1 .* [y2,z])
+# 			elseif sp==sP0
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
+# 				append!(val,-y2 .* [y1,z])
+# 			elseif sp==sMM
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
+# 				append!(val,-z .* [y1,y2])
+# 			elseif sp==s0M
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
+# 				append!(val,-y2 .* [y1,z])
+# 			elseif sp==sM0
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
+# 				append!(val,-y1 .* [y2,z])
+# 			elseif sp==sPP
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
+# 				append!(val,-z .* [y2,y1])
+# 			end
+# 		end
+# 		if (preind % (len / 10)) == 1 || preind == len
+# 			res += sparse(row,col,val,len,len)
+# 			col=Int64[]
+# 			row=Int64[]
+# 			val=Float64[]
+# 		end
+# 	end
+# 	return res
+# end
+
 println("build H...")
-# @time H=buildH(diag_,flag_)
+@time H=buildH(diag_,flag_)
+# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+# L=14 100s
+# L=15 300s
+# L=16 1600s
+# L=17 5600s
 println()
 
 println("computing eigenvalues...")
-H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 println(sort(e))
 println()
@@ -630,7 +730,7 @@ function Tind(ind::Int64,L::Int64,right::Bool)
 	end
 end
 
-function Tfunc!(C::Vector{Float64},B::Vector{Float64},L::Int64=L,right::Bool=true)
+function Tfunc!(C,B,L::Int64=L,right::Bool=true)
 	Threads.@threads for preind = 1 : len
 		ind = basis[preind]
 		C[preind] = B[fromInd[Tind(ind,L,right)]]
