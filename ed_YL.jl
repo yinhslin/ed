@@ -7,7 +7,7 @@ using Arpack
 
 BLAS.set_num_threads(48)
 
-const L = 15
+const L = 9
 
 const nev = 1
 
@@ -113,10 +113,56 @@ function stringFromState(state::Int64,L::Int64=L)
 		end
 		state>>=2
 	end
-	s*='_'
-	s*=string(start)
+	# TODO
+	# s*='_'
+	# s*=string(start)
 	return s
 end
+
+kantaro_ = Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}}()
+
+for el = 0 : 1
+	for er = 0 : 1
+		for q = 0 : 2
+			kantaro_[(1, el, er, q)] = []
+		end
+		# kantaro_[(1, el, er, 0)] = [ 0, 1 ]
+		# kantaro_[(1, el, er, 1)] = [ 2 ]
+		# kantaro_[(1, el, er, 2)] = [ 3 ]
+	end
+end
+kantaro_[(1, true, true, 0)] = [ 1 ]
+kantaro_[(1, true, true, 1)] = [ 2 ]
+kantaro_[(1, true, true, 2)] = [ 3 ]
+
+
+function setKantaro!(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)
+	if evenxs_right
+		kantaro[(L, evenxs_left, evenxs_right, q)] = getKantaro(kantaro, L-1, evenxs_left, false, q) # append x
+		append!(kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (1 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, q) ] )
+		append!(kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (2 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+2)%3) ] )
+		append!(kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (3 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+1)%3) ] )
+	else
+		kantaro[(L, evenxs_left, evenxs_right, q)] = getKantaro(kantaro, L-1, evenxs_left, true, q)
+	end
+end
+
+function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)::Vector{Int64}
+	if !haskey(kantaro, (L, evenxs_left, evenxs_right, q))
+		setKantaro!(kantaro, L, evenxs_left, evenxs_right, q)
+	end
+	return kantaro[(L, evenxs_left, evenxs_right, q)]
+end
+
+function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}}, L::Int64)::Vector{Int64}
+	res = getKantaro(kantaro_, L, true, true, 0)
+	append!(res, getKantaro(kantaro_, L, false, false, 0))
+	return res
+end
+
+[ stringFromState(x, L) for x in getKantaro(kantaro_, L) ]
 
 #=
 TODO trailingXs is only used for inferring whether start label is type 1 or ρ.
@@ -1510,3 +1556,5 @@ println("using Arpack:")
 # println("computing eigenvalues...")
 # @time e,v = Arpack.eigs(H+ρ,nev=nev,which=:SR)
 # println(sort(e))
+
+# key is (L, evenxs_left, evenxs_right, Z3 charge)
