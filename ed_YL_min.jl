@@ -395,7 +395,7 @@ newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
 function buildH(diag,flag)
 	res = sparse(Int64[],Int64[],Float64[],len,len)
-	col=Int64[]
+	# col=Int64[]
 	row=Int64[]
 	val=Float64[]
 	ncol = 1
@@ -501,6 +501,11 @@ function buildH(diag,flag)
 			row=Int64[]
 			val=Float64[]
 		end
+		append!(res.rowval, row)
+		append!(res.nzval, val)
+		# col=Int64[]
+		row=Int64[]
+		val=Float64[]
 	end
 	return res
 end
