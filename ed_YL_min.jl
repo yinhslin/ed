@@ -2,8 +2,9 @@ using LinearAlgebra,LinearMaps
 using SparseArrays
 using ArnoldiMethod
 using Arpack
+using BenchmarkTools
 
-const L = 16
+const L = 15
 const nev = 1
 
 println()
@@ -447,7 +448,7 @@ function buildH(diag,flag)
 				append!(val,-z .* [y2,y1])
 			end
 		end
-		if (preind % (len / 10)) == 1 || preind == len
+		if (preind % (len / 100)) == 1 || preind == len
 			res += sparse(row,col,val,len,len)
 			col=Int64[]
 			row=Int64[]
@@ -456,6 +457,65 @@ function buildH(diag,flag)
 	end
 	return res
 end
+
+# function buildH(diag,flag)
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	# for preind = thread : Threads.nthreads() : len
+# 	for preind = 1 : len
+# 		ind = basis[preind]
+# 		state=stateFromInd(ind)
+# 		append!(col,[preind])
+# 		append!(row,[preind])
+# 		append!(val,[diag[preind]])
+# 		for i = 1 : L
+# 			sp=localStatePair(state,i)
+# 			if sp==sXX  && isρ1ρ(flag,preind,i)
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+# 				append!(val,-ξ .* [y1,y2,x])
+# 			elseif sp==sPM
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+# 				append!(val,-y1 .* [ξ,y2,x])
+# 			elseif sp==sMP
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+# 				append!(val,-y2 .* [ξ,y1,x])
+# 			elseif sp==s00
+# 				append!(col,[preind,preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+# 				append!(val,-x .* [ξ,y1,y2])
+# 			elseif sp==s0P
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
+# 				append!(val,-y1 .* [y2,z])
+# 			elseif sp==sP0
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
+# 				append!(val,-y2 .* [y1,z])
+# 			elseif sp==sMM
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
+# 				append!(val,-z .* [y1,y2])
+# 			elseif sp==s0M
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
+# 				append!(val,-y2 .* [y1,z])
+# 			elseif sp==sM0
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
+# 				append!(val,-y1 .* [y2,z])
+# 			elseif sp==sPP
+# 				append!(col,[preind,preind])
+# 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
+# 				append!(val,-z .* [y2,y1])
+# 			end
+# 		end
+# 	end
+# 	return sparse(row,col,val,len,len)
+# end
 
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())

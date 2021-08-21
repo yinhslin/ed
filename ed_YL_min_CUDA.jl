@@ -396,10 +396,10 @@ println()
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
 function buildH(diag,flag)
-	res = sparse(Int64[],Int64[],Float64[],len,len)
 	col=Int64[]
 	row=Int64[]
 	val=Float64[]
+	# for preind = thread : Threads.nthreads() : len
 	for preind = 1 : len
 		ind = basis[preind]
 		state=stateFromInd(ind)
@@ -450,14 +450,8 @@ function buildH(diag,flag)
 				append!(val,-z .* [y2,y1])
 			end
 		end
-		if (preind % (len / 10)) == 1 || preind == len
-			res += sparse(row,col,val,len,len)
-			col=Int64[]
-			row=Int64[]
-			val=Float64[]
-		end
 	end
-	return CuSparseMatrixCSR(res)
+	return CuSparseMatrixCSR(sparse(row,col,val,len,len))
 end
 
 function eigs_ArnoldiMethod(H)
