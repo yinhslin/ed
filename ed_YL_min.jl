@@ -470,24 +470,6 @@ function buildH(diag,flag)
 		append!(val, newval)
 		# end
 
-		# num = size(row,1)
-		# for j = preind+1 : len+1
-		# 	res.colptr[j] += num
-		# end
-		# append!(res.rowval, row)
-		# append!(res.nzval, val)
-		# row=Int64[]
-		# val=Float64[]
-
-		# num = res.colptr[preind] + size(row,1)
-		# for j = preind+1 : len+1
-		# 	res.colptr[j] = num
-		# 	append!(res.rowval, row)
-		# 	append!(res.nzval, val)
-		# 	row=Int64[]
-		# 	val=Float64[]
-		# end
-
 		if (preind % (len / 10)) == 1 || preind == len
 			num = res.colptr[ncol]
 			for c in col
