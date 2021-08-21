@@ -4,7 +4,7 @@ using ArnoldiMethod
 using Arpack
 using BenchmarkTools
 
-const L = 15
+const L = 2
 const nev = 1
 
 println()
@@ -393,11 +393,111 @@ println()
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
-function buildH(diag,flag)
+function buildHNew(diag,flag)
 	res = sparse(Int64[],Int64[],Float64[],len,len)
 	col=Int64[]
 	row=Int64[]
 	val=Float64[]
+	ncol = 1
+	for preind = 1 : len
+		ind = basis[preind]
+		state=stateFromInd(ind)
+		append!(col,[1])
+		append!(row,[preind])
+		append!(val,[diag[preind]])
+		for i = 1 : L
+			sp=localStatePair(state,i)
+			if sp==sXX  && isρ1ρ(flag,preind,i)
+				# append!(col,[preind,preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+				append!(val,-ξ .* [y1,y2,x])
+			elseif sp==sPM
+				# append!(col,[preind,preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+				append!(val,-y1 .* [ξ,y2,x])
+			elseif sp==sMP
+				# append!(col,[preind,preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+				append!(val,-y2 .* [ξ,y1,x])
+			elseif sp==s00
+				# append!(col,[preind,preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+				append!(val,-x .* [ξ,y1,y2])
+			elseif sp==s0P
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
+				append!(val,-y1 .* [y2,z])
+			elseif sp==sP0
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
+				append!(val,-y2 .* [y1,z])
+			elseif sp==sMM
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
+				append!(val,-z .* [y1,y2])
+			elseif sp==s0M
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
+				append!(val,-y2 .* [y1,z])
+			elseif sp==sM0
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
+				append!(val,-y1 .* [y2,z])
+			elseif sp==sPP
+				# append!(col,[preind,preind])
+				col[end] += 1
+				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
+				append!(val,-z .* [y2,y1])
+			end
+		end
+
+		num = res.colptr[preind] + size(row,1)
+		for j = preind+1 : len+1
+			res.colptr[j] = num
+			append!(res.rowval, row)
+			append!(res.nzval, val)
+			row=Int64[]
+			val=Float64[]
+		end
+
+		# if (preind % (len / 10)) == 1 || preind == len
+		# 	# num = res.colptr[preind] + size(row,1)
+		# 	# cnt = preind+1
+		# 	num = res.colptr[ncol]
+		# 	for c in col
+		# 		println(ncol)
+		# 		ncol += 1
+		# 		num += c
+		# 		res.colptr[ncol] = num
+		# 	end
+		# 	# Threads.@threads for j = ncol+1 : len+1
+		# 	# 	res.colptr[j] = num
+		# 	# end
+		# 	append!(res.rowval, row)
+		# 	append!(res.nzval, val)
+		# 	col=Int64[]
+		# 	row=Int64[]
+		# 	val=Float64[]
+		# end
+	end
+	println(res)
+	return res
+end
+
+function buildH(diag,flag)
+	col=Int64[]
+	row=Int64[]
+	val=Float64[]
+	# for preind = thread : Threads.nthreads() : len
 	for preind = 1 : len
 		ind = basis[preind]
 		state=stateFromInd(ind)
@@ -448,74 +548,10 @@ function buildH(diag,flag)
 				append!(val,-z .* [y2,y1])
 			end
 		end
-		if (preind % (len / 100)) == 1 || preind == len
-			res += sparse(row,col,val,len,len)
-			col=Int64[]
-			row=Int64[]
-			val=Float64[]
-		end
 	end
-	return res
+	println(sparse(row,col,val,len,len))
+	return sparse(row,col,val,len,len)
 end
-
-# function buildH(diag,flag)
-# 	col=Int64[]
-# 	row=Int64[]
-# 	val=Float64[]
-# 	# for preind = thread : Threads.nthreads() : len
-# 	for preind = 1 : len
-# 		ind = basis[preind]
-# 		state=stateFromInd(ind)
-# 		append!(col,[preind])
-# 		append!(row,[preind])
-# 		append!(val,[diag[preind]])
-# 		for i = 1 : L
-# 			sp=localStatePair(state,i)
-# 			if sp==sXX  && isρ1ρ(flag,preind,i)
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
-# 				append!(val,-ξ .* [y1,y2,x])
-# 			elseif sp==sPM
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
-# 				append!(val,-y1 .* [ξ,y2,x])
-# 			elseif sp==sMP
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
-# 				append!(val,-y2 .* [ξ,y1,x])
-# 			elseif sp==s00
-# 				append!(col,[preind,preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
-# 				append!(val,-x .* [ξ,y1,y2])
-# 			elseif sp==s0P
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sP0,sMM]))
-# 				append!(val,-y1 .* [y2,z])
-# 			elseif sp==sP0
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0P,sMM]))
-# 				append!(val,-y2 .* [y1,z])
-# 			elseif sp==sMM
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0P,sP0]))
-# 				append!(val,-z .* [y1,y2])
-# 			elseif sp==s0M
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[sM0,sPP]))
-# 				append!(val,-y2 .* [y1,z])
-# 			elseif sp==sM0
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0M,sPP]))
-# 				append!(val,-y1 .* [y2,z])
-# 			elseif sp==sPP
-# 				append!(col,[preind,preind])
-# 				append!(row,map(s->newPreind(state,i,s),[s0M,sM0]))
-# 				append!(val,-z .* [y2,y1])
-# 			end
-# 		end
-# 	end
-# 	return sparse(row,col,val,len,len)
-# end
 
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
@@ -527,434 +563,434 @@ println("build H...")
 @time H=buildH(diag_,flag_)
 println()
 
-println("computing eigenvalues...")
-println()
-
-println("using Arpack:")
-@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-println(sort(e))
-println()
-
-println("using ArnoldiMethod:")
-@time e,v = eigs_ArnoldiMethod(H)
-println(sort(e))
-println()
-
-
-#=
-
-Some new stuff in preparation for zipper.
-
-=#
-
-#=
-A fusionFlag retains the information of whether main flag is 0.
-=#
-function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
-	state=ind-1
-	below=(state>>(2*(L+1)))
-	start=(state>>(2*L))&3
-	state=state&(4^L-1)
-	if (start==3) || (below>=L)
-		flag[ind] = true
-		return
-	end
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	evenxs=iseven(trailingXs(state,L))
-	tot=start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		tot%=3
-		a=(state >> (2*pos)) & 3
-		if a==0
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		else
-			if(!evenxs)
-				flag[ind] = true
-				return
-			end
-			if a==2
-				tot+=1
-			elseif a==3
-				tot+=2
-			end
-		end
-	end
-	tot=tot-start
-	if tot<0
-		tot+=3
-	end
-	tot%=3
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	if tot!=0
-		flag[ind] = true
-	end
-end
-
-println("preparing fusion flags...")
-println("original...")
-fusionFlag_ = zeros(Bool,4^L)
-@time Threads.@threads for i = 1 : 4^L
-	setFusionFlag!(fusionFlag_,i,L)
-end
-println()
-
-println("preparing extended fusion flags...")
-println("original...")
-extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
-@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-	setFusionFlag!(extendedFusionFlag_,i,L+2)
-end
-println()
-
-#=
-Distinguished from Yuji's mainFlag by variable type.
-mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
-=#
-function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
-	return flag[ind]
-end
-
-#=
-The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
-right before the vertex from which ρ is draped below.
-=#
-function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
-	below = ((ind-1)>>(2*(L+1)))
-	if below==0
-		return
-	end
-	start = ((ind-1)>>(2*L)) & 3
-	state = (ind-1)&(4^L-1)
-	evenxs=iseven(trailingXs(state,L))
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	tot=start
-	for pos = 0 : below-2
-		a=(state >> (2*pos)) & 3
-		if a==0
-			evenxs = ! evenxs
-		elseif a==2
-			tot+=1
-		elseif a==3
-			tot+=2
-		end
-	end
-	tot%=3
-	if evenxs
-		edgeAtDrapeMapping[ind] = 4+tot
-	else
-		edgeAtDrapeMapping[ind] = 1+tot
-	end
-end
-
-println("preparing edge at drape mapping...")
-edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
-@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
-end
-println()
-
-
-#=
-
-F-symbol stuff.
-
-=#
-
-const fSymbolMapping_ = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878]
-
-function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
-	i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
-	return fSymbolMapping_[i+1]
-end
-
-
-#=
-
-Zipper stuff.
-
-=#
-
-# Precompute fusion space basis
-println("precompute fusion space bases for zipper...")
-zipBases = fill([], L+1)
-zipLen = fill(0, L+1)
-zipFromInd = fill(Dict(), L+1)
-Threads.@threads for i = 1 : L+1
-	println(i,"/",L+1)
-	@time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
-	zipLen[i] = length(zipBases[i])
-	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
-end
-println()
-
-function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
-	if ind==2 && iseven(L)
-		state = 0
-	else
-		state = (ind-1)
-	end
-	state = state << 2
-	(a,b)=sp
-	i = L
-	state &= ~(3<<(2*(i-1)))
-	state |= (a<<(2*(i-1)))
-	j = 1
-	state &= ~(3<<(2*(j-1)))
-	state |= (b<<(2*(j-1)))
-	if (state==0) && iseven(L) && (ind==1)
-		state = 1
-	end
-	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
-end
-
-attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[1][attachInd(ind,sp,start,L)]
-
-function buildAttach()
-	col=Int64[]
-	row=Int64[]
-	val=Float64[]
-	for preind = 1 : len
-		ind = basis[preind]
-		state = stateFromInd(ind)
-		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
-			ni = attachPreind(ind,sXX,0,L+2)
-			append!(col,[preind])
-			append!(row,[ni])
-			append!(val,[1])
-		else
-			ni = attachPreind(ind,sXX,0,L+2)
-			append!(col,[preind])
-			append!(row,[ni])
-			append!(val,[1/ζ])
-			ni = attachPreind(ind,s00,0,L+2)
-			append!(col,[preind])
-			append!(row,[ni])
-			append!(val,[ξ])
-			ni = attachPreind(ind,sPM,1,L+2)
-			append!(col,[preind])
-			append!(row,[ni])
-			append!(val,[ξ])
-			ni = attachPreind(ind,sMP,2,L+2)
-			append!(col,[preind])
-			append!(row,[ni])
-			append!(val,[ξ])
-		end
-	end
-	append!(col,[len])
-	append!(row,[zipLen[1]])
-	append!(val,[0])
-	return sparse(row,col,val)
-end
-
-function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
-	below = ((ind-1)>>(2*(L+1)))
-	if below == 0
-		error("no ρ from below")
-	end
-	start = ((ind-1)>>(2*L)) & 3
-	i = below
-	below += 1
-	state = (ind-1) & (4^L-1)
-	if state==1 && iseven(L)
-		state = 0
-	end
-	(a,b)=sp
-	state &= ~(3<<(2*(i-1)))
-	state |= (a<<(2*(i-1)))
-	j=i+1
-	state &= ~(3<<(2*(j-1)))
-	state |= (b<<(2*(j-1)))
-	if (state==0) && (isodd(trailingXs((ind-1)&(4^L-1),L)) || (iseven(L) && ((ind-1)&(4^L-1))==1))
-		state = 1
-	end
-	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
-end
-
-ZipPreind(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][ZipInd(ind,sp,L)]
-
-function buildZip(i::Int64)
-	col=Int64[]
-	row=Int64[]
-	val=Float64[]
-	for preind = 1 : zipLen[i]
-		ind = zipBases[i][preind]
-		e1 = Int64(edgeAtDrapeMapping_[ind])
-		state = stateFromInd(ind,L+2)
-		s1,s2 = localStatePair(state,i,L+2)
-		for s3 = 0 : 3
-			for s4 = 0 : 3
-				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-					continue
-				end
-				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
-				append!(col,[preind])
-				append!(row,[ni])
-				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
-			end
-		end
-	end
-	append!(col,[zipLen[i]])
-	append!(row,[zipLen[i+1]])
-	append!(val,[0])
-	return sparse(row,col,val)
-end
-
-function buildDetach()
-	col=Int64[]
-	row=Int64[]
-	val=Float64[]
-	for preind = 1 : zipLen[L]
-		ind = zipBases[L+1][preind]
-		state = stateFromInd(ind,L+2)
-		ni = 1+(state&(4^L-1))
-		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
-			ni=2
-		end
-		# TODO
-		if mainFlag(fusionFlag_,ni,L) != 0
-			continue
-		end
-		ni = fromInd[ni]
-		sp = localStatePair(state,L+1,L+2)
-		if sp in [sXX, s00, sPM, sMP]
-			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
-				if sp==sXX
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[ζ])
-				end
-			else
-				if sp==sXX
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[1])
-				else
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[√ζ])
-				end
-			end
-		end
-	end
-	append!(col,[zipLen[L]])
-	append!(row,[len])
-	append!(val,[0])
-	return sparse(row,col,val)
-end
-
-println("creating zipper by composition...")
-println("build attach...")
-@time ρ = LinearMap(buildAttach())
-
-zips = fill(ρ, L+1)
-for i = 1 : L
-	println("build zip ", i, "...")
-	@time global zips[i] = LinearMap(buildZip(i))
-end
-println("multiply zip...")
-@time for i = 1 : L
-	global ρ = zips[i] * ρ
-end
-
-println("build detach...")
-@time ρ = LinearMap(buildDetach()) * ρ
-println()
-
-
-#=
-
-Translation (lattice shift) stuff.
-
-=#
-
-function Tind(ind::Int64,L::Int64,right::Bool)
-	if ind==2 && iseven(L)
-		return 1
-	end
-	if ind==1 && iseven(L)
-		return 2
-	end
-	state = (ind-1) & (4^L-1)
-	if right
-		return 1+(state>>2)+((state&3)<<(2*(L-1)))
-	else
-		return 1+(state<<2)&(4^L-1)+(state>>(2*(L-1)))
-	end
-end
-
-function Tfunc!(C,B,L::Int64=L,right::Bool=true)
-	Threads.@threads for preind = 1 : len
-		ind = basis[preind]
-		C[preind] = B[fromInd[Tind(ind,L,right)]]
-	end
-end
-
-T=LinearMap((C,B)->Tfunc!(C,B),len,ismutating=true,issymmetric=false,isposdef=false)
-
-
-#=
-
-Simultaneous diagonalization and output.
-
-=#
-
-# Print as mathematica array to reuse Mathematica code for making plots.
-function mathematicaVector(V::Vector{Float64})
-	s="{"
-	for i = 1:(size(V,1)-1)
-		s*=string(V[i])
-		s*=", "
-	end
-	s*=string(V[size(V,1)])
-	s*="}"
-	return s
-end
-
-# Print as mathematica matrix to reuse Mathematica code for making plots.
-function mathematicaMatrix(M::Vector{Vector{Float64}})
-	s="{\n"
-	for i = 1:(size(M,1)-1)
-		s*=mathematicaVector(M[i])
-		s*=",\n"
-	end
-	s*=mathematicaVector(M[size(M,1)])
-	s*="\n}\n"
-	return s
-end
-
-function diagonalizeHTρ(e,v,T,ρ)
-	println("diagonalizing H,T,ρ...")
-
-	smallH = Matrix(diagm(e))
-	smallT = Matrix(adjoint(v)*T*v)
-	smallρ = Matrix(adjoint(v)*ρ*v)
-	smalle,smallv = eigen(smallH+smallT+smallρ)
-
-	Hs = real(diag(adjoint(smallv)*smallH*smallv))
-	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-	Ps = real(map(log,Ts)/(2*π*im))*L
-	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-	HPρs = hcat(Hs,Ps,ρs)
-	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-	s=""
-	s*=string(HPρs[1][1])
-	print(mathematicaMatrix(HPρs))
-end
-
-@time diagonalizeHTρ(e,v,T,ρ)
+# println("computing eigenvalues...")
+# println()
+#
+# println("using Arpack:")
+# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+# println(sort(real(e)))
+# println()
+#
+# # println("using ArnoldiMethod:")
+# # @time e,v = eigs_ArnoldiMethod(H)
+# # println(sort(e))
+# # println()
+#
+#
+# #=
+#
+# Some new stuff in preparation for zipper.
+#
+# =#
+#
+# #=
+# A fusionFlag retains the information of whether main flag is 0.
+# =#
+# function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
+# 	state=ind-1
+# 	below=(state>>(2*(L+1)))
+# 	start=(state>>(2*L))&3
+# 	state=state&(4^L-1)
+# 	if (start==3) || (below>=L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	if state==0 && isodd(L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	evenxs=iseven(trailingXs(state,L))
+# 	tot=start
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		tot%=3
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 			if ((pos+1)==below || (below!=0 && pos==L-1))
+# 				tot = 3-tot
+# 			end
+# 		else
+# 			if(!evenxs)
+# 				flag[ind] = true
+# 				return
+# 			end
+# 			if a==2
+# 				tot+=1
+# 			elseif a==3
+# 				tot+=2
+# 			end
+# 		end
+# 	end
+# 	tot=tot-start
+# 	if tot<0
+# 		tot+=3
+# 	end
+# 	tot%=3
+# 	if state==0 && isodd(L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	if tot!=0
+# 		flag[ind] = true
+# 	end
+# end
+#
+# println("preparing fusion flags...")
+# println("original...")
+# fusionFlag_ = zeros(Bool,4^L)
+# @time Threads.@threads for i = 1 : 4^L
+# 	setFusionFlag!(fusionFlag_,i,L)
+# end
+# println()
+#
+# println("preparing extended fusion flags...")
+# println("original...")
+# extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+# 	setFusionFlag!(extendedFusionFlag_,i,L+2)
+# end
+# println()
+#
+# #=
+# Distinguished from Yuji's mainFlag by variable type.
+# mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
+# =#
+# function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
+# 	return flag[ind]
+# end
+#
+# #=
+# The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
+# right before the vertex from which ρ is draped below.
+# =#
+# function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
+# 	below = ((ind-1)>>(2*(L+1)))
+# 	if below==0
+# 		return
+# 	end
+# 	start = ((ind-1)>>(2*L)) & 3
+# 	state = (ind-1)&(4^L-1)
+# 	evenxs=iseven(trailingXs(state,L))
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	tot=start
+# 	for pos = 0 : below-2
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 		elseif a==2
+# 			tot+=1
+# 		elseif a==3
+# 			tot+=2
+# 		end
+# 	end
+# 	tot%=3
+# 	if evenxs
+# 		edgeAtDrapeMapping[ind] = 4+tot
+# 	else
+# 		edgeAtDrapeMapping[ind] = 1+tot
+# 	end
+# end
+#
+# println("preparing edge at drape mapping...")
+# edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+# 	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
+# end
+# println()
+#
+#
+# #=
+#
+# F-symbol stuff.
+#
+# =#
+#
+# const fSymbolMapping_ = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878]
+#
+# function FSymbolZipper(e1::Int64,s1::Int64,s2::Int64,s3::Int64,s4::Int64)
+# 	i = s4 + (s3<<2) + (s2<<4) + (s1<<6) + ((e1-1)<<8)
+# 	return fSymbolMapping_[i+1]
+# end
+#
+#
+# #=
+#
+# Zipper stuff.
+#
+# =#
+#
+# # Precompute fusion space basis
+# println("precompute fusion space bases for zipper...")
+# zipBases = fill([], L+1)
+# zipLen = fill(0, L+1)
+# zipFromInd = fill(Dict(), L+1)
+# Threads.@threads for i = 1 : L+1
+# 	println(i,"/",L+1)
+# 	@time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
+# 	zipLen[i] = length(zipBases[i])
+# 	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
+# end
+# println()
+#
+# function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
+# 	if ind==2 && iseven(L)
+# 		state = 0
+# 	else
+# 		state = (ind-1)
+# 	end
+# 	state = state << 2
+# 	(a,b)=sp
+# 	i = L
+# 	state &= ~(3<<(2*(i-1)))
+# 	state |= (a<<(2*(i-1)))
+# 	j = 1
+# 	state &= ~(3<<(2*(j-1)))
+# 	state |= (b<<(2*(j-1)))
+# 	if (state==0) && iseven(L) && (ind==1)
+# 		state = 1
+# 	end
+# 	return 1+(state+(start<<(2*L))+(1<<(2*(L+1))))
+# end
+#
+# attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[1][attachInd(ind,sp,start,L)]
+#
+# function buildAttach()
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	for preind = 1 : len
+# 		ind = basis[preind]
+# 		state = stateFromInd(ind)
+# 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
+# 			ni = attachPreind(ind,sXX,0,L+2)
+# 			append!(col,[preind])
+# 			append!(row,[ni])
+# 			append!(val,[1])
+# 		else
+# 			ni = attachPreind(ind,sXX,0,L+2)
+# 			append!(col,[preind])
+# 			append!(row,[ni])
+# 			append!(val,[1/ζ])
+# 			ni = attachPreind(ind,s00,0,L+2)
+# 			append!(col,[preind])
+# 			append!(row,[ni])
+# 			append!(val,[ξ])
+# 			ni = attachPreind(ind,sPM,1,L+2)
+# 			append!(col,[preind])
+# 			append!(row,[ni])
+# 			append!(val,[ξ])
+# 			ni = attachPreind(ind,sMP,2,L+2)
+# 			append!(col,[preind])
+# 			append!(row,[ni])
+# 			append!(val,[ξ])
+# 		end
+# 	end
+# 	append!(col,[len])
+# 	append!(row,[zipLen[1]])
+# 	append!(val,[0])
+# 	return sparse(row,col,val)
+# end
+#
+# function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
+# 	below = ((ind-1)>>(2*(L+1)))
+# 	if below == 0
+# 		error("no ρ from below")
+# 	end
+# 	start = ((ind-1)>>(2*L)) & 3
+# 	i = below
+# 	below += 1
+# 	state = (ind-1) & (4^L-1)
+# 	if state==1 && iseven(L)
+# 		state = 0
+# 	end
+# 	(a,b)=sp
+# 	state &= ~(3<<(2*(i-1)))
+# 	state |= (a<<(2*(i-1)))
+# 	j=i+1
+# 	state &= ~(3<<(2*(j-1)))
+# 	state |= (b<<(2*(j-1)))
+# 	if (state==0) && (isodd(trailingXs((ind-1)&(4^L-1),L)) || (iseven(L) && ((ind-1)&(4^L-1))==1))
+# 		state = 1
+# 	end
+# 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
+# end
+#
+# ZipPreind(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][ZipInd(ind,sp,L)]
+#
+# function buildZip(i::Int64)
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	for preind = 1 : zipLen[i]
+# 		ind = zipBases[i][preind]
+# 		e1 = Int64(edgeAtDrapeMapping_[ind])
+# 		state = stateFromInd(ind,L+2)
+# 		s1,s2 = localStatePair(state,i,L+2)
+# 		for s3 = 0 : 3
+# 			for s4 = 0 : 3
+# 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
+# 					continue
+# 				end
+# 				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
+# 				append!(col,[preind])
+# 				append!(row,[ni])
+# 				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
+# 			end
+# 		end
+# 	end
+# 	append!(col,[zipLen[i]])
+# 	append!(row,[zipLen[i+1]])
+# 	append!(val,[0])
+# 	return sparse(row,col,val)
+# end
+#
+# function buildDetach()
+# 	col=Int64[]
+# 	row=Int64[]
+# 	val=Float64[]
+# 	for preind = 1 : zipLen[L]
+# 		ind = zipBases[L+1][preind]
+# 		state = stateFromInd(ind,L+2)
+# 		ni = 1+(state&(4^L-1))
+# 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
+# 			ni=2
+# 		end
+# 		# TODO
+# 		if mainFlag(fusionFlag_,ni,L) != 0
+# 			continue
+# 		end
+# 		ni = fromInd[ni]
+# 		sp = localStatePair(state,L+1,L+2)
+# 		if sp in [sXX, s00, sPM, sMP]
+# 			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+# 				if sp==sXX
+# 					append!(col,[preind])
+# 					append!(row,[ni])
+# 					append!(val,[ζ])
+# 				end
+# 			else
+# 				if sp==sXX
+# 					append!(col,[preind])
+# 					append!(row,[ni])
+# 					append!(val,[1])
+# 				else
+# 					append!(col,[preind])
+# 					append!(row,[ni])
+# 					append!(val,[√ζ])
+# 				end
+# 			end
+# 		end
+# 	end
+# 	append!(col,[zipLen[L]])
+# 	append!(row,[len])
+# 	append!(val,[0])
+# 	return sparse(row,col,val)
+# end
+#
+# println("creating zipper by composition...")
+# println("build attach...")
+# @time ρ = LinearMap(buildAttach())
+#
+# zips = fill(ρ, L+1)
+# for i = 1 : L
+# 	println("build zip ", i, "...")
+# 	@time global zips[i] = LinearMap(buildZip(i))
+# end
+# println("multiply zip...")
+# @time for i = 1 : L
+# 	global ρ = zips[i] * ρ
+# end
+#
+# println("build detach...")
+# @time ρ = LinearMap(buildDetach()) * ρ
+# println()
+#
+#
+# #=
+#
+# Translation (lattice shift) stuff.
+#
+# =#
+#
+# function Tind(ind::Int64,L::Int64,right::Bool)
+# 	if ind==2 && iseven(L)
+# 		return 1
+# 	end
+# 	if ind==1 && iseven(L)
+# 		return 2
+# 	end
+# 	state = (ind-1) & (4^L-1)
+# 	if right
+# 		return 1+(state>>2)+((state&3)<<(2*(L-1)))
+# 	else
+# 		return 1+(state<<2)&(4^L-1)+(state>>(2*(L-1)))
+# 	end
+# end
+#
+# function Tfunc!(C,B,L::Int64=L,right::Bool=true)
+# 	Threads.@threads for preind = 1 : len
+# 		ind = basis[preind]
+# 		C[preind] = B[fromInd[Tind(ind,L,right)]]
+# 	end
+# end
+#
+# T=LinearMap((C,B)->Tfunc!(C,B),len,ismutating=true,issymmetric=false,isposdef=false)
+#
+#
+# #=
+#
+# Simultaneous diagonalization and output.
+#
+# =#
+#
+# # Print as mathematica array to reuse Mathematica code for making plots.
+# function mathematicaVector(V::Vector{Float64})
+# 	s="{"
+# 	for i = 1:(size(V,1)-1)
+# 		s*=string(V[i])
+# 		s*=", "
+# 	end
+# 	s*=string(V[size(V,1)])
+# 	s*="}"
+# 	return s
+# end
+#
+# # Print as mathematica matrix to reuse Mathematica code for making plots.
+# function mathematicaMatrix(M::Vector{Vector{Float64}})
+# 	s="{\n"
+# 	for i = 1:(size(M,1)-1)
+# 		s*=mathematicaVector(M[i])
+# 		s*=",\n"
+# 	end
+# 	s*=mathematicaVector(M[size(M,1)])
+# 	s*="\n}\n"
+# 	return s
+# end
+#
+# function diagonalizeHTρ(e,v,T,ρ)
+# 	println("diagonalizing H,T,ρ...")
+#
+# 	smallH = Matrix(diagm(e))
+# 	smallT = Matrix(adjoint(v)*T*v)
+# 	smallρ = Matrix(adjoint(v)*ρ*v)
+# 	smalle,smallv = eigen(smallH+smallT+smallρ)
+#
+# 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+# 	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+# 	Ps = real(map(log,Ts)/(2*π*im))*L
+# 	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+# 	HPρs = hcat(Hs,Ps,ρs)
+# 	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+# 	s=""
+# 	s*=string(HPρs[1][1])
+# 	print(mathematicaMatrix(HPρs))
+# end
+#
+# @time diagonalizeHTρ(e,v,T,ρ)
