@@ -1,14 +1,15 @@
 using LinearAlgebra,LinearMaps
 using SparseArrays
-using ArnoldiMethod
 using Arpack
+using ArnoldiMethod
+using KrylovKit
 # using Profile
 # using Traceur
 
 # BLAS.set_num_threads(48)
 
-const L = 15
-const nev = 1
+const L = 12
+const nev = 8
 
 println()
 println("exact diagonalization of L=", L, " keeping nev=", nev)
@@ -695,9 +696,27 @@ end
 # 	return res
 # end
 
+function eigs_ArnoldiMethod(H)
+	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
+	e,v = ArnoldiMethod.partialeigen(decomp)
+	return e,v
+end
+
+function eigs_KrylovKit(H)
+	val,vecs,info = KrylovKit.eigsolve(H,rand(eltype(H),size(H,1)),nev,:SR;issymmetric=true, krylovdim=2*nev)
+	mat = zeros(size(vecs,1),len)
+	mat = zeros(len,size(vecs,1))
+	cnt = 1
+	for v in vecs
+		mat[:,cnt] = v
+		cnt += 1
+	end
+	return val,mat
+end
+
 println("build H...")
-@time H=buildH(diag_,flag_)
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+# @time H=buildH(diag_,flag_)
+H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 # L=14 100s
 # L=15 300s
 # L=16 1600s
@@ -705,7 +724,20 @@ println("build H...")
 println()
 
 println("computing eigenvalues...")
+println()
+
+println("using Arpack:")
 @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+println(sort(e))
+println()
+
+println("using ArnoldiMethod:")
+@time e,v = eigs_ArnoldiMethod(H)
+println(sort(e))
+println()
+
+println("using KrylovKit:")
+@time e,v = eigs_KrylovKit(H)
 println(sort(e))
 println()
 
@@ -784,7 +816,7 @@ function diagonalizeHT(e,v,T)
 	println(mathematicaMatrix(HPs))
 end
 
-diagonalizeHT(e,v,T)
+# diagonalizeHT(e,v,T)
 
 
 # # TODO Incorporate divide-and-conquer to below
