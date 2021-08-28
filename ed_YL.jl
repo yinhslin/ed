@@ -8,7 +8,7 @@ using KrylovKit
 
 # BLAS.set_num_threads(48)
 
-const L = 1
+const L = 6
 const nev = 8
 
 println()
@@ -1762,7 +1762,7 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + q2 - (q1 + start)
 				if mod(tot, 3) == start
-					for evenxs_left = false : true
+					for evenxs_left = true : true
 						for evenxs_right = false : true
 							for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
 								for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
@@ -1778,7 +1778,7 @@ function getExtendedKantaro(
 				tot = - (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start
 					for evenxs_left = false : true
-						for evenxs_right = false : true
+						for evenxs_right = true : true
 							# if (start==0 && q1==q2==0 && s1==1 && evenxs_left==true && evenxs_right==true)
 							# 	println(getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1))
 							# 	println(getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2))
@@ -1797,8 +1797,8 @@ function getExtendedKantaro(
 				for s2 = 1 : 3
 					tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 					if mod(tot, 3) == start
-						for evenxs_left = false : true
-							for evenxs_right = false : true
+						for evenxs_left = true : true
+							for evenxs_right = true : true
 								for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
 									for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
 										append!(res, extendedState( state1, state2, L1, L2, start, below, s1, s2 ))
@@ -2059,6 +2059,7 @@ end
 
 println("In Original not in Kantaro")
 for below = 1 : L
+	println(below)
 	for b in zipBases[below]
 		if !(b-1 in getExtendedKantaro(kantaro_, L, below))
 			println(stringFromState(b-1,L+2), "=", stringFromEdgeState(extendedEdgeStateMapping_[b], L+2), "=", b-1)
@@ -2069,6 +2070,7 @@ println()
 
 println("In Kantaro not in Original")
 for below = 1 : L
+	println(below)
 	for b in getExtendedKantaro(kantaro_, L, below)
 		if !(b+1 in zipBases[below])
 			println(stringFromState(b,L+2), "=", stringFromEdgeState(extendedEdgeStateMapping_[b+1], L+2), "=", b)
