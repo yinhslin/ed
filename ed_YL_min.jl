@@ -5,7 +5,7 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 6
+const L = 9
 const nev = 1
 
 println()

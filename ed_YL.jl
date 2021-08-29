@@ -8,7 +8,7 @@ using KrylovKit
 
 # BLAS.set_num_threads(48)
 
-const L = 6
+const L = 3
 const nev = 8
 
 println()
@@ -150,19 +150,17 @@ function setKantaro!(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)
 	kantaro[(L, evenxs_left, evenxs_right, q)] = []
 	if evenxs_right
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], getKantaro(kantaro, L-1, evenxs_left, false, q) ) # append x
+		# append X
+		append!( kantaro[(L, evenxs_left, evenxs_right, q)], getKantaro(kantaro, L-1, evenxs_left, false, q) )
+		# append non-X
 		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (1 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, q) ] )
 		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (2 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+2)%3) ] )
 		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (3 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+1)%3) ] )
 	else
-		# if (evenxs_left == true && evenxs_right == false && q==0)
-		# 	println("this", L-1, evenxs_left, true, q)
-		# 	println("this", getKantaro(kantaro, L-1, evenxs_left, true, q))
-		# end
 		append!( kantaro[(L, evenxs_left, evenxs_right, q)], getKantaro(kantaro, L-1, evenxs_left, true, q) )
 	end
 	if ((iseven(L) && !evenxs_left) || (isodd(L) && evenxs_left)) && evenxs_right
-		# Append non-X to XX...X
+		# append non-X to XX...X
 		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ (q+1) << (2*(L-1)) ] )
 	end
 end
@@ -726,20 +724,20 @@ end
 
 # println("build H...")
 # # @time H=buildH(diag_,flag_)
-# H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
+H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 # # L=14 100s
 # # L=15 300s
 # # L=16 1600s
 # # L=17 5600s
 # println()
 
-# println("computing eigenvalues...")
-# println()
-#
-# println("using Arpack:")
-# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-# println(sort(e))
-# println()
+println("computing eigenvalues...")
+println()
+
+println("using Arpack:")
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+println(sort(e))
+println()
 #
 # println("using ArnoldiMethod:")
 # @time e,v = eigs_ArnoldiMethod(H)
@@ -1422,7 +1420,7 @@ function buildAttach()
 	return sparse(row,col,val)
 end
 
-function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
+function zipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	below = ((ind-1)>>(2*(L+1)))
 	if below == 0
 		error("no ρ from below")
@@ -1451,7 +1449,7 @@ function ZipInd(ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2)
 	return 1+(state+(start<<(2*L))+(below<<(2*(L+1))))
 end
 
-ZipPreind(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][ZipInd(ind,sp,L)]
+zipPreInd(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][zipInd(ind,sp,L)]
 
 function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 	for preind = 1 : zipLen[i+1]
@@ -1505,8 +1503,8 @@ function zip!(C::Vector{Float64},B::Vector{Float64},i::Int64)
 				end
 				# println(i+1, " ", ind, " ", (s3,s4), " ", L+2)
 				# println(stringFromState(ind-1,L+2))
-				# println(stringFromState(ZipInd(ind,(s3,s4),L+2)-1,L+2))
-				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
+				# println(stringFromState(zipInd(ind,(s3,s4),L+2)-1,L+2))
+				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
 				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 			end
 		end
@@ -1530,7 +1528,7 @@ function buildZip(i::Int64)
 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
 					continue
 				end
-				ni = ZipPreind(i+1,ind,(s3,s4),L+2)
+				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
 				# C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 				# col[((preind-1)<<4)+(s3<<2)+s4+1] = preind
 				# row[((preind-1)<<4)+(s3<<2)+s4+1] = ni
@@ -1547,11 +1545,11 @@ function buildZip(i::Int64)
 	return sparse(row,col,val)
 end
 
-function Detach!(C::Vector{Float64},B::Vector{Float64})
+function detach!(C::Vector{Float64},B::Vector{Float64})
 	for preind = 1 : len
 		C[preind] = 0
 	end
-	for preind = 1 : zipLen[L]
+	for preind = 1 : zipLen[L+1]
 		ind = zipBases[L+1][preind]
 		if B[preind] == 0
 			# || mainFlag(extendedFusionFlag_,ind,L+2) != 0
@@ -1567,18 +1565,16 @@ function Detach!(C::Vector{Float64},B::Vector{Float64})
 			continue
 		end
 		ni = fromInd[ni]
-		s1,s2 = localStatePair(state,L+1,L+2)
-		if s1==inv(s2)
-			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
-				if (s1,s2)==sXX
-					C[ni] += ζ * B[preind]
-				end
-			else
-				if (s1,s2)==sXX
-					C[ni] += B[preind]
-				else
-					C[ni] += √ζ * B[preind]
-				end
+		sp = localStatePair(state,L+1,L+2)
+		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+			if sp==sXX
+				C[ni] += ζ * B[preind]
+			end
+		else
+			if sp==sXX
+				C[ni] += B[preind]
+			elseif sp==s00 || sp==sPM || sp==sMP
+				C[ni] += √ζ * B[preind]
 			end
 		end
 	end
@@ -1588,7 +1584,7 @@ function buildDetach()
 	col=Int64[]
 	row=Int64[]
 	val=Float64[]
-	for preind = 1 : zipLen[L]
+	for preind = 1 : zipLen[L+1]
 		ind = zipBases[L+1][preind]
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
@@ -1599,47 +1595,45 @@ function buildDetach()
 			continue
 		end
 		ni = fromInd[ni]
-		s1,s2 = localStatePair(state,L+1,L+2)
-		if s1==inv(s2)
-			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
-				if (s1,s2)==sXX
-					# C[ni] += ζ * B[preind]
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[ζ])
-				end
-			else
-				if (s1,s2)==sXX
-					# C[ni] += B[preind]
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[1])
-				else
-					# C[ni] += √ζ * B[preind]
-					append!(col,[preind])
-					append!(row,[ni])
-					append!(val,[√ζ])
-				end
+		sp = localStatePair(state,L+1,L+2)
+		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+			if sp==sXX
+				# C[ni] += ζ * B[preind]
+				append!(col,[preind])
+				append!(row,[ni])
+				append!(val,[ζ])
+			end
+		else
+			if sp==sXX
+				# C[ni] += B[preind]
+				append!(col,[preind])
+				append!(row,[ni])
+				append!(val,[1])
+			elseif sp==s00 || sp==sPM || sp==sMP
+				# C[ni] += √ζ * B[preind]
+				append!(col,[preind])
+				append!(row,[ni])
+				append!(val,[√ζ])
 			end
 		end
 	end
-	append!(col,[zipLen[L]])
-	append!(row,[len])
-	append!(val,[0])
+	# append!(col,[zipLen[L]])
+	# append!(row,[len])
+	# append!(val,[0])
 	return sparse(row,col,val)
 end
 
-# println("creating zipper by composition...")
-# println("build attach...")
-# # @time ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
+println("creating zipper by composition...")
+println("build attach...")
+@time ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
 # @time ρ = LinearMap(buildAttach())
-#
-# # for i = 1 : L
-# # 	println("build zip ", i, "...")
-# # 	@time global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
-# # 	# @time global ρ = LinearMap(buildZip(i)) * ρ
-# # end
-#
+
+for i = 1 : L
+	println("build zip ", i, "...")
+	@time global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+	# @time global ρ = LinearMap(buildZip(i)) * ρ
+end
+
 # zips = fill(ρ, L+1)
 # for i = 1 : L
 # 	println("build zip ", i, "...")
@@ -1649,49 +1643,49 @@ end
 # @time for i = 1 : L
 # 	global ρ = zips[i] * ρ
 # end
-#
-# println("build detach...")
-# # @time ρ = LinearMap((C,B)->Detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+
+println("build detach...")
+@time ρ = LinearMap((C,B)->detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
 # @time ρ = LinearMap(buildDetach()) * ρ
-# println()
+println()
 #
-# # ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
-# # for i = 1 : L
-# # 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-# # end
-# # ρ = LinearMap((C,B)->Detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
-#
-# # TODO Is there more efficient way than converting to Matrix and then eigen?
-#
-# function diagonalizeHTρ(e,v,T,ρ)
-# 	println()
-# 	println("diagonalizing H,T,ρ...")
-#
-# 	# smallH = diagm(e)
-# 	# smallT = adjoint(v)*T*v
-# 	# smallρ = adjoint(v)*ρ*v
-# 	# # smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=nev,which=:SR)
-# 	# small = smallH+smallT+smallρ
-# 	# @time smalle,smallv = eigs_ArnoldiMethod(small)
-#
-# 	smallH = Matrix(diagm(e))
-# 	smallT = Matrix(adjoint(v)*T*v)
-# 	smallρ = Matrix(adjoint(v)*ρ*v)
-# 	smalle,smallv = eigen(smallH+smallT+smallρ)
-#
-# 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
-# 	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
-# 	Ps = real(map(log,Ts)/(2*π*im))*L
-# 	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
-# 	HPρs = hcat(Hs,Ps,ρs)
-# 	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
-# 	s=""
-# 	s*=string(HPρs[1][1])
-# 	print(mathematicaMatrix(HPρs))
+# ρ = LinearMap((C,B)->attach!(C,B),4^(L+3)*(L+2),4^L,ismutating=true,issymmetric=false,isposdef=false)
+# for i = 1 : L
+# 	global ρ = LinearMap((C,B)->zip!(C,B,i),4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
 # end
-#
-# # diagonalizeHTρ(e,v,T,ρ)
-#
+# ρ = LinearMap((C,B)->detach!(C,B),4^L,4^(L+3)*(L+2),ismutating=true,issymmetric=false,isposdef=false) * ρ
+
+# TODO Is there more efficient way than converting to Matrix and then eigen?
+
+function diagonalizeHTρ(e,v,T,ρ)
+	println()
+	println("diagonalizing H,T,ρ...")
+
+	# smallH = diagm(e)
+	# smallT = adjoint(v)*T*v
+	# smallρ = adjoint(v)*ρ*v
+	# # smalle,smallv = Arpack.eigs(smallH+smallT+smallρ,nev=nev,which=:SR)
+	# small = smallH+smallT+smallρ
+	# @time smalle,smallv = eigs_ArnoldiMethod(small)
+
+	smallH = Matrix(diagm(e))
+	smallT = Matrix(adjoint(v)*T*v)
+	smallρ = Matrix(adjoint(v)*ρ*v)
+	smalle,smallv = eigen(smallH+smallT+smallρ)
+
+	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+	Ps = real(map(log,Ts)/(2*π*im))*L
+	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
+	HPρs = hcat(Hs,Ps,ρs)
+	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
+	s=""
+	s*=string(HPρs[1][1])
+	print(mathematicaMatrix(HPρs))
+end
+
+diagonalizeHTρ(e,v,T,ρ)
+
 # # H=LinearMap((C,B)->Hfunc!(C,B,diag_,flag_),len,ismutating=true,issymmetric=true,isposdef=false)
 #
 # function eigs_ArnoldiMethod(H)
@@ -1716,7 +1710,7 @@ end
 # # @time e,v = Arpack.eigs(H+ρ,nev=nev,which=:SR)
 # # println(sort(e))
 #
-# # key is (L, evenxs_left, evenxs_right, Z3 charge)
+
 
 function extendedState(
 	state1::Int64,
@@ -1727,8 +1721,7 @@ function extendedState(
 	below::Int64,
 	s1::Int64,
 	s2::Int64)
-	# println(start, " ", L1, " ", L2)
-	# println((2*(L1+L2+2)))
+
 	return state1 + (s1 << (2*L1)) + (state2 << (2*(L1+1))) + (s2 << (2*(L1+L2+1))) + (start << (2*(L1+L2+2))) + (below << (2*(L1+L2+3)))
 end
 
@@ -1762,12 +1755,11 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + q2 - (q1 + start)
 				if mod(tot, 3) == start
-					for evenxs_left = true : true
-						for evenxs_right = false : true
-							for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-								for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
-									append!(res, extendedState( state1, state2, L1, L2, start, below, 0, s2 ))
-								end
+					evenxs_left = true
+					for evenxs_right = false : true
+						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
+								append!(res, extendedState( state1, state2, L1, L2, start, below, 0, s2 ))
 							end
 						end
 					end
@@ -1777,16 +1769,11 @@ function getExtendedKantaro(
 			for s1 = 1 : 3
 				tot = - (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start
+					evenxs_right = true
 					for evenxs_left = false : true
-						for evenxs_right = true : true
-							# if (start==0 && q1==q2==0 && s1==1 && evenxs_left==true && evenxs_right==true)
-							# 	println(getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1))
-							# 	println(getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2))
-							# end
-							for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-								for state2 in getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
-									append!(res, extendedState( state1, state2, L1, L2, start, below, s1, 0 ))
-								end
+						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
+								append!(res, extendedState( state1, state2, L1, L2, start, below, s1, 0 ))
 							end
 						end
 					end
@@ -1797,13 +1784,11 @@ function getExtendedKantaro(
 				for s2 = 1 : 3
 					tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 					if mod(tot, 3) == start
-						for evenxs_left = true : true
-							for evenxs_right = true : true
-								for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-									for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
-										append!(res, extendedState( state1, state2, L1, L2, start, below, s1, s2 ))
-									end
-								end
+						evenxs_left = true
+						evenxs_right = true
+						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
+								append!(res, extendedState( state1, state2, L1, L2, start, below, s1, s2 ))
 							end
 						end
 					end
@@ -1843,16 +1828,10 @@ function getExtendedKantaro(
 					for state2 in getKantaro(kantaro, L2, false, true, q2)
 						append!(res, extendedState( 0, state2, L1, L2, start, below, 0, s2 ))
 					end
-					# for state2 in getKantaro(kantaro, L2, true, false, q2)
-					# 	append!(res, extendedState( 0, state2, L1, L2, start, below, 0, s2 ))
-					# end
 				else
 					for state2 in getKantaro(kantaro, L2, true, true, q2)
 						append!(res, extendedState( 0, state2, L1, L2, start, below, 0, s2 ))
 					end
-					# for state2 in getKantaro(kantaro, L2, false, false, q2)
-					# 	append!(res, extendedState( 0, state2, L1, L2, start, below, 0, s2 ))
-					# end
 				end
 			end
 		end
@@ -1861,9 +1840,6 @@ function getExtendedKantaro(
 			tot = - (q2 + (s1 - 1) + (q1 + start))
 			if mod(tot, 3) == start
 				if iseven(L1)
-					# for state2 in getKantaro(kantaro, L2, false, true, q2)
-					# 	append!(res, extendedState( 0, state2, L1, L2, start, below, s1, 0 ))
-					# end
 					for state2 in getKantaro(kantaro, L2, true, false, q2)
 						append!(res, extendedState( 0, state2, L1, L2, start, below, s1, 0 ))
 					end
@@ -1871,9 +1847,6 @@ function getExtendedKantaro(
 					for state2 in getKantaro(kantaro, L2, true, true, q2)
 						append!(res, extendedState( 0, state2, L1, L2, start, below, s1, 0 ))
 					end
-					# for state2 in getKantaro(kantaro, L2, false, false, q2)
-					# 	append!(res, extendedState( 0, state2, L1, L2, start, below, s1, 0 ))
-					# end
 				end
 			end
 		end
@@ -1881,27 +1854,14 @@ function getExtendedKantaro(
 		for s1 = 1 : 3
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
-				if mod(tot, 3) == start
-					if iseven(L1)
-						for state2 in getKantaro(kantaro, L2, true, true, q2)
-							append!(res, extendedState( 0, state2, L1, L2, start, below, s1, s2 ))
-						end
-						# for state2 in getKantaro(kantaro, L2, false, false, q2)
-						# 	append!(res, extendedState( 0, state2, L1, L2, start, below, s1, s2 ))
-						# end
-					else
-						# for state2 in getKantaro(kantaro, L2, true, false, q2)
-						# 	append!(res, extendedState( 0, state2, L1, L2, start, below, s1, s2 ))
-						# end
-						# for state2 in getKantaro(kantaro, L2, false, true, q2)
-						# 	append!(res, extendedState( 0, state2, L1, L2, start, below, s1, s2 ))
-						# end
+				if mod(tot, 3) == start && iseven(L1)
+					for state2 in getKantaro(kantaro, L2, true, true, q2)
+						append!(res, extendedState( 0, state2, L1, L2, start, below, s1, s2 ))
 					end
 				end
 			end
 		end
 	end
-
 
 
 	# L2 is all X, L1 is not
@@ -1931,9 +1891,6 @@ function getExtendedKantaro(
 			tot = (s2 - 1) + q2 - (q1 + start)
 			if mod(tot, 3) == start
 				if iseven(L2)
-					# for state1 in getKantaro(kantaro, L1, false, true, q1)
-					# 	append!(res, extendedState( state1, 0, L1, L2, start, below, 0, s2 ))
-					# end
 					for state1 in getKantaro(kantaro, L1, true, false, q1)
 						append!(res, extendedState( state1, 0, L1, L2, start, below, 0, s2 ))
 					end
@@ -1941,9 +1898,6 @@ function getExtendedKantaro(
 					for state1 in getKantaro(kantaro, L1, true, true, q1)
 						append!(res, extendedState( state1, 0, L1, L2, start, below, 0, s2 ))
 					end
-					# for state1 in getKantaro(kantaro, L1, false, false, q1)
-					# 	append!(res, extendedState( state1, 0, L1, L2, start, below, 0, s2 ))
-					# end
 				end
 			end
 		end
@@ -1955,16 +1909,10 @@ function getExtendedKantaro(
 					for state1 in getKantaro(kantaro, L1, false, true, q1)
 						append!(res, extendedState( state1, 0, L1, L2, start, below, s1, 0 ))
 					end
-					# for state1 in getKantaro(kantaro, L1, true, false, q1)
-					# 	append!(res, extendedState( state1, 0, L1, L2, start, below, s1, 0 ))
-					# end
 				else
 					for state1 in getKantaro(kantaro, L1, true, true, q1)
 						append!(res, extendedState( state1, 0, L1, L2, start, below, s1, 0 ))
 					end
-					# for state1 in getKantaro(kantaro, L1, false, false, q1)
-					# 	append!(res, extendedState( state1, 0, L1, L2, start, below, s1, 0 ))
-					# end
 				end
 			end
 		end
@@ -1972,21 +1920,9 @@ function getExtendedKantaro(
 		for s1 = 1 : 3
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
-				if mod(tot, 3) == start
-					if iseven(L2)
-						for state1 in getKantaro(kantaro, L1, true, true, q1)
-							append!(res, extendedState( state1, 0, L1, L2, start, below, s1, s2 ))
-						end
-						# for state1 in getKantaro(kantaro, L1, false, false, q1)
-						# 	append!(res, extendedState( state1, 0, L1, L2, start, below, s1, s2 ))
-						# end
-					else
-						# for state1 in getKantaro(kantaro, L1, true, false, q1)
-						# 	append!(res, extendedState( state1, 0, L1, L2, start, below, s1, s2 ))
-						# end
-						# for state1 in getKantaro(kantaro, L1, false, true, q1)
-						# 	append!(res, extendedState( state1, 0, L1, L2, start, below, s1, s2 ))
-						# end
+				if mod(tot, 3) == start && iseven(L2)
+					for state1 in getKantaro(kantaro, L1, true, true, q1)
+						append!(res, extendedState( state1, 0, L1, L2, start, below, s1, s2 ))
 					end
 				end
 			end
@@ -1996,11 +1932,6 @@ function getExtendedKantaro(
 
 	# both L1 and L2 are all X
 	if iseven(L1) && iseven(L2)
-		# if (L1==0 && L2==2 && start==0 && below==1)
-		# 	println("here")
-		# 	println(0, 0, L1, L2, start, below, 0, 0)
-		# 	println(extendedState( 0, 0, L1, L2, start, below, 0, 0 ))
-		# end
 		append!(res, extendedState( 0, 0, L1, L2, start, below, 0, 0 ))
 		for s1 = 1 : 3
 			s2 = 1 + mod(1-s1,3)
@@ -2025,10 +1956,7 @@ function getExtendedKantaro(
 		end
 	end
 
-	# TODO
-	# if iseven(L)
-	# 	append!(res, [0, 1])
-	# end
+
 	sort!(res)
 	return res
 end
@@ -2056,18 +1984,18 @@ end
 # 	println(stringFromState(b-1,L+2), "=", stringFromEdgeState(extendedEdgeStateMapping_[b], L+2))
 # end
 # println()
-
-println("In Original not in Kantaro")
-for below = 1 : L
-	println(below)
-	for b in zipBases[below]
-		if !(b-1 in getExtendedKantaro(kantaro_, L, below))
-			println(stringFromState(b-1,L+2), "=", stringFromEdgeState(extendedEdgeStateMapping_[b], L+2), "=", b-1)
-		end
-	end
-end
-println()
-
+#
+# println("In Original not in Kantaro")
+# for below = 1 : L
+# 	println(below)
+# 	for b in zipBases[below]
+# 		if !(b-1 in getExtendedKantaro(kantaro_, L, below))
+# 			println(stringFromState(b-1,L+2), "=", stringFromEdgeState(extendedEdgeStateMapping_[b], L+2), "=", b-1)
+# 		end
+# 	end
+# end
+# println()
+#
 println("In Kantaro not in Original")
 for below = 1 : L
 	println(below)
