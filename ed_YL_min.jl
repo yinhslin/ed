@@ -487,6 +487,7 @@ Threads.@threads for i = 1 : L+1
 end
 println()
 
+
 function zipBases(below::Int64, preind::Int64)
 	return getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind] + 1
 end
