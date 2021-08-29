@@ -5,11 +5,12 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 9
+const L = 13
 const nev = 8
+const buildSparse = true
 
 println()
-println("exact diagonalization of L=", L, " keeping nev=", nev)
+println("exact diagonalization of L=", L, " with build sparse=", buildSparse, " and keeping nev=", nev)
 println()
 
 #=
@@ -471,7 +472,22 @@ Threads.@threads for i = 1 : L+1
 	zipLen[i] = length(zipBases[i])
 	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
 end
+# TODO
+extendedKantaro_ = Dict{Tuple{Int64,Int64},Vector{Int64}}()
 println()
+
+# # Precompute fusion space basis
+# println("precompute fuison space bases for zipper...")
+# zipLen = fill(0, L+1)
+# zipFromInd = fill(Dict(), L+1)
+# Threads.@threads for i = 1 : L+1
+# 	println(i,"/",L+1)
+# 	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
+# 	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
+# 	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
+# 	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,x) for x in 1 : zipLen[i])
+# end
+# println()
 
 #####
 
@@ -811,20 +827,20 @@ println()
 println("computing eigenvalues...")
 println()
 
-# println("using Arpack:")
-# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-# println(sort(real(e)))
-# println()
+println("using Arpack:")
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+println(sort(real(e)))
+println()
 #
 # println("using ArnoldiMethod:")
 # @time e,v = eigs_ArnoldiMethod(H)
 # println(sort(e))
 # println()
 #
-println("using KrylovKit:")
-@time e,v = eigs_KrylovKit(H)
-println(sort(e))
-println()
+# println("using KrylovKit:")
+# @time e,v = eigs_KrylovKit(H)
+# println(sort(e))
+# println()
 
 
 #=
@@ -961,7 +977,8 @@ The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
 right before the vertex from which ρ is draped below.
 =#
 function setEdgeAtDrapeMappings!(edgeAtDrapeMappings,below::Int64,preind::Int64)
-	state = getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind]
+	# state = getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind]
+	state = zipBases[below][preind]-1
 	start = (state>>(2*(L+2))) & 3
 	state = state&(4^(L+2)-1)
 	evenxs=iseven(trailingXs(state,L+2))
@@ -1268,11 +1285,13 @@ end
 
 #####
 
-# ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
-# for i = 1 : L
-# 	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
-# end
-# ρ = LinearMap((C,B)->detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+if !buildSparse
+	ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
+	for i = 1 : L
+		global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+	end
+	ρ = LinearMap((C,B)->detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+else
 
 #####
 
@@ -1298,48 +1317,49 @@ end
 
 #####
 
-# println("build attach...")
-# @time attach = buildAttach()
-# ρ = attach
-# println()
-#
-# zips = fill(ρ, L+1)
-# for i = 1 : L
-# 	println("build zip ", i, "...")
-# 	@time global zips[i] = buildZip(i)
-# end
-# println()
-#
-# println("multiply zip...")
-# @time for i = 1 : L
-# 	global ρ = zips[i] * ρ
-# end
-# println()
-#
-# println("build detach...")
-# @time detach = buildDetach()
-# ρ = detach * ρ
-# println()
+	# println("build attach...")
+	# @time attach = buildAttach()
+	# ρ = attach
+	# println()
+	#
+	# zips = fill(ρ, L+1)
+	# for i = 1 : L
+	# 	println("build zip ", i, "...")
+	# 	@time global zips[i] = buildZip(i)
+	# end
+	# println()
+	#
+	# println("multiply zip...")
+	# @time for i = 1 : L
+	# 	global ρ = zips[i] * ρ
+	# end
+	# println()
+	#
+	# println("build detach...")
+	# @time detach = buildDetach()
+	# ρ = detach * ρ
+	# println()
 
 #####
 
-println("creating zipper by composition...")
-println("build attach...")
-@time ρ = LinearMap(buildAttach())
+	println("creating zipper by composition...")
+	println("build attach...")
+	@time ρ = LinearMap(buildAttach())
 
-zips = fill(ρ, L+1)
-for i = 1 : L
-	println("build zip ", i, "...")
-	@time global zips[i] = LinearMap(buildZip(i))
-end
-println("multiply zip...")
-@time for i = 1 : L
-	global ρ = zips[i] * ρ
-end
+	zips = fill(ρ, L+1)
+	for i = 1 : L
+		println("build zip ", i, "...")
+		@time global zips[i] = LinearMap(buildZip(i))
+	end
+	println("multiply zip...")
+	@time for i = 1 : L
+		global ρ = zips[i] * ρ
+	end
 
-println("build detach...")
-@time ρ = LinearMap(buildDetach()) * ρ
-println()
+	println("build detach...")
+	@time ρ = LinearMap(buildDetach()) * ρ
+	println()
+end
 
 
 #=
