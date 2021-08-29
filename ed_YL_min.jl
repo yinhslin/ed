@@ -6,7 +6,7 @@ using KrylovKit
 using BenchmarkTools
 
 const L = 9
-const nev = 1
+const nev = 8
 
 println()
 println("exact diagonalization of L=", L, " keeping nev=", nev)
@@ -200,6 +200,8 @@ function extendedState(
 
 	return state1 + (s1 << (2*L1)) + (state2 << (2*(L1+1))) + (s2 << (2*(L1+L2+1))) + (start << (2*(L1+L2+2))) + (below << (2*(L1+L2+3)))
 end
+
+newEdgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
 
 function getExtendedKantaro(
 	kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
@@ -438,17 +440,38 @@ function getExtendedKantaro(
 	return res
 end
 
+extendedKantaro_ = Dict{Tuple{Int64,Int64},Vector{Int64}}()
+
 function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+	extendedKantaro::Dict{Tuple{Int64,Int64},Vector{Int64}},
 	L::Int64, below::Int64)::Vector{Int64}
-	res = []
-	for start = 0 : 2
-		append!(res, getExtendedKantaro(kantaro, L, start, below))
-		if iseven(L)
-			append!(res, 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
+	if !haskey(extendedKantaro, (L, below))
+		res = []
+		for start = 0 : 2
+			append!(res, getExtendedKantaro(kantaro, L, start, below))
+			if iseven(L)
+				append!(res, 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
+			end
 		end
+		extendedKantaro[(L, below)] = res
 	end
-	return res
+	return extendedKantaro[(L, below)]
 end
+
+# Precompute fusion space basis
+println("precompute fuison space bases for zipper...")
+zipBases = fill([], L+1)
+# zipBasesKantaro = fill([], L+1)
+zipLen = fill(0, L+1)
+zipFromInd = fill(Dict(), L+1)
+Threads.@threads for i = 1 : L+1
+	println(i,"/",L+1)
+	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
+	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
+	zipLen[i] = length(zipBases[i])
+	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
+end
+println()
 
 #####
 
@@ -788,20 +811,20 @@ println()
 println("computing eigenvalues...")
 println()
 
-println("using Arpack:")
-@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-println(sort(real(e)))
-println()
+# println("using Arpack:")
+# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+# println(sort(real(e)))
+# println()
 #
 # println("using ArnoldiMethod:")
 # @time e,v = eigs_ArnoldiMethod(H)
 # println(sort(e))
 # println()
 #
-# println("using KrylovKit:")
-# @time e,v = eigs_KrylovKit(H)
-# println(sort(e))
-# println()
+println("using KrylovKit:")
+@time e,v = eigs_KrylovKit(H)
+println(sort(e))
+println()
 
 
 #=
@@ -866,21 +889,21 @@ function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
 	end
 end
 
-println("preparing fusion flags...")
-println("original...")
-fusionFlag_ = zeros(Bool,4^L)
-@time Threads.@threads for i = 1 : 4^L
-	setFusionFlag!(fusionFlag_,i,L)
-end
-println()
+# println("preparing fusion flags...")
+# println("original...")
+# fusionFlag_ = zeros(Bool,4^L)
+# @time Threads.@threads for i = 1 : 4^L
+# 	setFusionFlag!(fusionFlag_,i,L)
+# end
+# println()
 
-println("preparing extended fusion flags...")
-println("original...")
-extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
-@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-	setFusionFlag!(extendedFusionFlag_,i,L+2)
-end
-println()
+# println("preparing extended fusion flags...")
+# println("original...")
+# extendedFusionFlag_ = zeros(Bool,4^(L+3)*(L+2))
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+# 	setFusionFlag!(extendedFusionFlag_,i,L+2)
+# end
+# println()
 
 #=
 Distinguished from Yuji's mainFlag by variable type.
@@ -890,18 +913,58 @@ function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
 	return flag[ind]
 end
 
+# #=
+# The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
+# right before the vertex from which ρ is draped below.
+# =#
+# function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
+# 	below = ((ind-1)>>(2*(L+1)))
+# 	if below==0
+# 		return
+# 	end
+# 	start = ((ind-1)>>(2*L)) & 3
+# 	state = (ind-1)&(4^L-1)
+# 	evenxs=iseven(trailingXs(state,L))
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	tot=start
+# 	for pos = 0 : below-2
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 		elseif a==2
+# 			tot+=1
+# 		elseif a==3
+# 			tot+=2
+# 		end
+# 	end
+# 	tot%=3
+# 	if evenxs
+# 		edgeAtDrapeMapping[ind] = 4+tot
+# 	else
+# 		edgeAtDrapeMapping[ind] = 1+tot
+# 	end
+# end
+#
+# println("preparing edge at drape mapping...")
+# edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
+# @time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
+# 	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
+# end
+# println()
+
+
 #=
 The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
 right before the vertex from which ρ is draped below.
 =#
-function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::Int64=L+2)
-	below = ((ind-1)>>(2*(L+1)))
-	if below==0
-		return
-	end
-	start = ((ind-1)>>(2*L)) & 3
-	state = (ind-1)&(4^L-1)
-	evenxs=iseven(trailingXs(state,L))
+function setEdgeAtDrapeMappings!(edgeAtDrapeMappings,below::Int64,preind::Int64)
+	state = getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind]
+	start = (state>>(2*(L+2))) & 3
+	state = state&(4^(L+2)-1)
+	evenxs=iseven(trailingXs(state,L+2))
 	if(state==1 && iseven(L))
 		state=0
 		evenxs=false
@@ -919,16 +982,25 @@ function setEdgeAtDrapeMapping!(edgeAtDrapeMapping::Vector{Int8},ind::Int64,L::I
 	end
 	tot%=3
 	if evenxs
-		edgeAtDrapeMapping[ind] = 4+tot
+		edgeAtDrapeMappings[below][preind] = 4+tot
+		# if below==1 && preind==10
+		# 	println("here")
+		# 	println(edgeAtDrapeMappings[below][preind])
+		# end
 	else
-		edgeAtDrapeMapping[ind] = 1+tot
+		edgeAtDrapeMappings[below][preind] = 1+tot
 	end
 end
 
-println("preparing edge at drape mapping...")
-edgeAtDrapeMapping_ = zeros(Int8,4^(L+3)*(L+2))
-@time Threads.@threads for i = 1 : 4^(L+3)*(L+2)
-	setEdgeAtDrapeMapping!(edgeAtDrapeMapping_,i,L+2)
+println("preparing edge at drape mappings...")
+edgeAtDrapeMappings_ = Vector{Int8}[]
+for i = 1 : L
+	push!(edgeAtDrapeMappings_, zeros(Int8,zipLen[1]))
+end
+@time Threads.@threads for below = 1 : L
+	for preind = 1 : zipLen[1]
+		setEdgeAtDrapeMappings!(edgeAtDrapeMappings_,below,preind)
+	end
 end
 println()
 
@@ -953,26 +1025,6 @@ Zipper stuff.
 
 =#
 
-# Precompute fusion space basis
-println("precompute fuison space bases for zipper...")
-zipBases = fill([], L+1)
-# zipBasesKantaro = fill([], L+1)
-zipLen = fill(0, L+1)
-zipFromInd = fill(Dict(), L+1)
-# Threads.@threads
-for i = 1 : L+1
-	println(i,"/",L+1)
-	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
-	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, L, i) ]
-	zipLen[i] = length(zipBases[i])
-	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
-end
-println()
-
-# for i = 1 : L+1
-# 	println(norm(sort!(zipBases[i]) - sort!(zipBasesKantaro[i])))
-# end
-
 function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
 	if ind==2 && iseven(L)
 		state = 0
@@ -996,10 +1048,10 @@ end
 attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[1][attachInd(ind,sp,start,L)]
 
 function attach!(C,B)
-	for preind = 1 : zipLen[1]
+	Threads.@threads for preind = 1 : zipLen[1]
 		C[preind] = 0
 	end
-	for preind = 1 : len
+	Threads.@threads for preind = 1 : len
 		ind = basis[preind]
 		if B[preind] == 0
 			continue
@@ -1085,15 +1137,15 @@ end
 zipPreInd(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[i][zipInd(ind,sp,L)]
 
 function zip!(C,B,i::Int64)
-	for preind = 1 : zipLen[i+1]
+	Threads.@threads for preind = 1 : zipLen[i+1]
 		C[preind] = 0
 	end
-	for preind = 1 : zipLen[i]
+	Threads.@threads for preind = 1 : zipLen[i]
 		ind = zipBases[i][preind]
 		if B[preind] == 0
 			continue
 		end
-		e1 = Int64(edgeAtDrapeMapping_[ind])
+		e1 = Int64(edgeAtDrapeMappings_[i][preind])
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
 		for s3 = 0 : 3
@@ -1114,7 +1166,7 @@ function buildZip(i::Int64)
 	val=Float64[]
 	for preind = 1 : zipLen[i]
 		ind = zipBases[i][preind]
-		e1 = Int64(edgeAtDrapeMapping_[ind])
+		e1 = Int64(edgeAtDrapeMappings_[i][preind])
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
 		for s3 = 0 : 3
@@ -1136,10 +1188,10 @@ function buildZip(i::Int64)
 end
 
 function detach!(C,B)
-	for preind = 1 : len
+	Threads.@threads for preind = 1 : len
 		C[preind] = 0
 	end
-	for preind = 1 : zipLen[L+1]
+	Threads.@threads for preind = 1 : zipLen[L+1]
 		ind = zipBases[L+1][preind]
 		if B[preind] == 0
 			continue
@@ -1149,7 +1201,10 @@ function detach!(C,B)
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
 			ni=2
 		end
-		if mainFlag(fusionFlag_,ni,L) != 0
+		# if mainFlag(fusionFlag_,ni,L) != 0
+		# 	continue
+		# end
+		if !haskey(fromInd, ni)
 			continue
 		end
 		ni = fromInd[ni]
@@ -1179,7 +1234,10 @@ function buildDetach()
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
 			ni=2
 		end
-		if mainFlag(fusionFlag_,ni,L) != 0
+		# if mainFlag(fusionFlag_,ni,L) != 0
+		# 	continue
+		# end
+		if !haskey(fromInd, ni)
 			continue
 		end
 		ni = fromInd[ni]
@@ -1210,11 +1268,11 @@ end
 
 #####
 
-ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
-for i = 1 : L
-	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
-end
-ρ = LinearMap((C,B)->detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
+# ρ = LinearMap((C,B)->attach!(C,B),zipLen[1],len,ismutating=true,issymmetric=false,isposdef=false)
+# for i = 1 : L
+# 	global ρ = LinearMap((C,B)->zip!(C,B,i),zipLen[i+1],zipLen[i],ismutating=true,issymmetric=false,isposdef=false) * ρ
+# end
+# ρ = LinearMap((C,B)->detach!(C,B),len,zipLen[L+1],ismutating=true,issymmetric=false,isposdef=false) * ρ
 
 #####
 
@@ -1265,23 +1323,23 @@ end
 
 #####
 
-# println("creating zipper by composition...")
-# println("build attach...")
-# @time ρ = LinearMap(buildAttach())
-#
-# zips = fill(ρ, L+1)
-# for i = 1 : L
-# 	println("build zip ", i, "...")
-# 	@time global zips[i] = LinearMap(buildZip(i))
-# end
-# println("multiply zip...")
-# @time for i = 1 : L
-# 	global ρ = zips[i] * ρ
-# end
-#
-# println("build detach...")
-# @time ρ = LinearMap(buildDetach()) * ρ
-# println()
+println("creating zipper by composition...")
+println("build attach...")
+@time ρ = LinearMap(buildAttach())
+
+zips = fill(ρ, L+1)
+for i = 1 : L
+	println("build zip ", i, "...")
+	@time global zips[i] = LinearMap(buildZip(i))
+end
+println("multiply zip...")
+@time for i = 1 : L
+	global ρ = zips[i] * ρ
+end
+
+println("build detach...")
+@time ρ = LinearMap(buildDetach()) * ρ
+println()
 
 
 #=
