@@ -5,7 +5,7 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 13
+const L = 6
 const nev = 8
 const buildSparse = true
 
@@ -182,10 +182,14 @@ function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}}, L
 end
 
 println("computing basis...")
-@time const basis = [ x+1 for x in getKantaro(kantaro_, L) ]
-const len = length(basis)
-const fromInd = Dict((basis[x],x) for x in 1:len)
+# @time const basis = [ x+1 for x in getKantaro(kantaro_, L) ]
+const len = length(getKantaro(kantaro_, L))
+const fromInd = Dict((getKantaro(kantaro_, L)[x]+1,x) for x in 1:len)
 println()
+
+function basis(preind)
+	return getKantaro(kantaro_, L)[preind] + 1
+end
 
 #####
 
@@ -442,6 +446,10 @@ function getExtendedKantaro(
 end
 
 extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
+# For memory purposes
+function clearExtendedKantaro()
+	extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
+end
 
 function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
 	extendedKantaro::Dict{Tuple{Int8,Int8},Vector{Int64}},
@@ -476,21 +484,20 @@ end
 # extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
 # println()
 
-# Precompute fusion space basis
-println("precompute fuison space bases for zipper...")
-zipLen = fill(0, L+1)
-zipFromInd = fill(Dict{Int64,Int32}(), L+1)
-Threads.@threads for i = 1 : L+1
-	println(i,"/",L+1)
-	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
-	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,Int32(x)) for x in 1 : zipLen[i])
-end
-println()
-
-
-function zipBases(below::Int64, preind::Int64)
-	return getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind] + 1
-end
+# # Precompute fusion space basis
+# println("precompute fuison space bases for zipper...")
+# zipLen = fill(0, L+1)
+# zipFromInd = fill(Dict{Int64,Int32}(), L+1)
+# Threads.@threads for i = 1 : L+1
+# 	println(i,"/",L+1)
+# 	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
+# 	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,Int32(x)) for x in 1 : zipLen[i])
+# end
+# println()
+#
+# function zipBases(below::Int64, preind::Int64)
+# 	return getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind] + 1
+# end
 
 #####
 
@@ -518,10 +525,10 @@ so might as well keep Yuji's original definition.
 =#
 
 # Changed to Int64 since Int32 will not be enough even for L=15.
-flag_ = zeros(Int64,len)
+flag_ = zeros(Int32,len)
 
-function setFlag!(flag::Vector{Int64},preind::Int64,L::Int64=L)
-	ind = basis[preind]
+function setFlag!(flag::Vector{Int32},preind::Int64,L::Int64=L)
+	ind = basis(preind)
 	# flagshift=L+2
 	state=ind-1
 	below=(state>>(2*(L+1)))
@@ -613,7 +620,7 @@ function stateFromInd(ind::Int64,L::Int64=L)
 	return state
 end
 
-# function mainFlag(flag::Vector{Int64},preind::Int64,L::Int64=L)::Int8
+# function mainFlag(flag::Vector{Int32},preind::Int64,L::Int64=L)::Int8
 # 	flagshift=L+2
 # 	return (flag[preind] >> flagshift) & 3
 # end
@@ -633,12 +640,12 @@ function localStatePair(state::Int64,i::Int64,L::Int64=L)
 	return a,b
 end
 
-function isρ1ρ(flag::Vector{Int64},preind::Int64,i::Int64)
+function isρ1ρ(flag::Vector{Int32},preind::Int64,i::Int64)
 	return ((flag[preind] >> (i-1)) & 1) == 1
 end
 
-function computeDiag!(diag::Vector{Float64},flag::Vector{Int64},preind::Int64)
-	ind = basis[preind]
+function computeDiag!(diag::Vector{Float64},flag::Vector{Int32},preind::Int64)
+	ind = basis(preind)
 	state=stateFromInd(ind)
 	# fl = mainFlag(flag,preind)
 	# if fl==3
@@ -714,7 +721,7 @@ function buildH(diag,flag)
 	val=Float64[]
 	ncol = 1
 	for preind = 1 : len
-		ind = basis[preind]
+		ind = basis(preind)
 		state=stateFromInd(ind)
 		# cannot directly append into row, val because row needs to be ordered
 		# define minirow/val and append to row/val after sorting
@@ -852,61 +859,61 @@ Some new stuff in preparation for zipper.
 
 =#
 
-#=
-A fusionFlag retains the information of whether main flag is 0.
-=#
-function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
-	state=ind-1
-	below=(state>>(2*(L+1)))
-	start=(state>>(2*L))&3
-	state=state&(4^L-1)
-	if (start==3) || (below>=L)
-		flag[ind] = true
-		return
-	end
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	evenxs=iseven(trailingXs(state,L))
-	tot=start
-	if(state==1 && iseven(L))
-		state=0
-		evenxs=false
-	end
-	for pos = 0 : L-1
-		tot%=3
-		a=(state >> (2*pos)) & 3
-		if a==0
-			evenxs = ! evenxs
-			if ((pos+1)==below || (below!=0 && pos==L-1))
-				tot = 3-tot
-			end
-		else
-			if(!evenxs)
-				flag[ind] = true
-				return
-			end
-			if a==2
-				tot+=1
-			elseif a==3
-				tot+=2
-			end
-		end
-	end
-	tot=tot-start
-	if tot<0
-		tot+=3
-	end
-	tot%=3
-	if state==0 && isodd(L)
-		flag[ind] = true
-		return
-	end
-	if tot!=0
-		flag[ind] = true
-	end
-end
+# #=
+# A fusionFlag retains the information of whether main flag is 0.
+# =#
+# function setFusionFlag!(flag::Vector{Bool},ind::Int64,L::Int64=L+2)
+# 	state=ind-1
+# 	below=(state>>(2*(L+1)))
+# 	start=(state>>(2*L))&3
+# 	state=state&(4^L-1)
+# 	if (start==3) || (below>=L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	if state==0 && isodd(L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	evenxs=iseven(trailingXs(state,L))
+# 	tot=start
+# 	if(state==1 && iseven(L))
+# 		state=0
+# 		evenxs=false
+# 	end
+# 	for pos = 0 : L-1
+# 		tot%=3
+# 		a=(state >> (2*pos)) & 3
+# 		if a==0
+# 			evenxs = ! evenxs
+# 			if ((pos+1)==below || (below!=0 && pos==L-1))
+# 				tot = 3-tot
+# 			end
+# 		else
+# 			if(!evenxs)
+# 				flag[ind] = true
+# 				return
+# 			end
+# 			if a==2
+# 				tot+=1
+# 			elseif a==3
+# 				tot+=2
+# 			end
+# 		end
+# 	end
+# 	tot=tot-start
+# 	if tot<0
+# 		tot+=3
+# 	end
+# 	tot%=3
+# 	if state==0 && isodd(L)
+# 		flag[ind] = true
+# 		return
+# 	end
+# 	if tot!=0
+# 		flag[ind] = true
+# 	end
+# end
 
 # println("preparing fusion flags...")
 # println("original...")
@@ -975,12 +982,27 @@ mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
 # println()
 
 
+# Precompute fusion space basis
+println("precompute fuison space bases for zipper...")
+zipLen = fill(0, L+1)
+zipFromInd = fill(Dict{Int64,Int32}(), L+1)
+Threads.@threads for i = 1 : L+1
+	println(i,"/",L+1)
+	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
+	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,Int32(x)) for x in 1 : zipLen[i])
+end
+println()
+
+function zipBases(below::Int64, preind::Int64)
+	return getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind] + 1
+end
+
+
 #=
 The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
 right before the vertex from which ρ is draped below.
 =#
 function setEdgeAtDrapeMappings!(edgeAtDrapeMappings,below::Int64,preind::Int64)
-	# state = getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind]
 	state = zipBases(below,preind)-1
 	start = (state>>(2*(L+2))) & 3
 	state = state&(4^(L+2)-1)
@@ -1003,10 +1025,6 @@ function setEdgeAtDrapeMappings!(edgeAtDrapeMappings,below::Int64,preind::Int64)
 	tot%=3
 	if evenxs
 		edgeAtDrapeMappings[below][preind] = 4+tot
-		# if below==1 && preind==10
-		# 	println("here")
-		# 	println(edgeAtDrapeMappings[below][preind])
-		# end
 	else
 		edgeAtDrapeMappings[below][preind] = 1+tot
 	end
@@ -1072,7 +1090,7 @@ function attach!(C,B)
 		C[preind] = 0
 	end
 	Threads.@threads for preind = 1 : len
-		ind = basis[preind]
+		ind = basis(preind)
 		if B[preind] == 0
 			continue
 		end
@@ -1098,7 +1116,7 @@ function buildAttach()
 	row=Int64[]
 	val=Float64[]
 	for preind = 1 : len
-		ind = basis[preind]
+		ind = basis(preind)
 		state = stateFromInd(ind)
 		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
 			ni = attachPreind(ind,sXX,0,L+2)
@@ -1388,7 +1406,7 @@ end
 
 function Tfunc!(C,B,L::Int64=L,right::Bool=true)
 	Threads.@threads for preind = 1 : len
-		ind = basis[preind]
+		ind = basis(preind)
 		C[preind] = B[fromInd[Tind(ind,L,right)]]
 	end
 end
@@ -1425,6 +1443,29 @@ function mathematicaMatrix(M::Vector{Vector{Float64}})
 	s*="\n}\n"
 	return s
 end
+
+# function computeρMatrix(v)
+
+# 	inBasis = basis
+# 	outBasis =
+#
+# 	println("build attach...")
+# 	@time ρ = LinearMap(buildAttach())
+# 	vρ = ρ * v
+#
+# 	for i = 1 : L
+# 		println("build zip ", i, "...")
+# 		@time global zips[i] = LinearMap(buildZip(i))
+# 	end
+# 	println("multiply zip...")
+# 	@time for i = 1 : L
+# 		global ρ = zips[i] * ρ
+# 	end
+#
+# 	println("build detach...")
+# 	@time ρ = LinearMap(buildDetach()) * ρ
+# 	println()
+# end
 
 function diagonalizeHTρ(e,v,T,ρ)
 	println("diagonalizing H,T,ρ...")
