@@ -445,16 +445,16 @@ function getExtendedKantaro(
 	return res
 end
 
-extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
+extendedKantaro_ = Dict{Int8,Vector{Int64}}()
 # For memory purposes
 function clearExtendedKantaro()
-	extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
+	extendedKantaro_ = Dict{Int8,Vector{Int64}}()
 end
 
 function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
-	extendedKantaro::Dict{Tuple{Int8,Int8},Vector{Int64}},
+	extendedKantaro::Dict{Int8,Vector{Int64}},
 	L::Int64, below::Int64)::Vector{Int64}
-	if !haskey(extendedKantaro, (L, below))
+	if !haskey(extendedKantaro, below)
 		res = []
 		for start = 0 : 2
 			append!(res, getExtendedKantaro(kantaro, L, start, below))
@@ -462,9 +462,9 @@ function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{In
 				append!(res, 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
 			end
 		end
-		extendedKantaro[(L, below)] = res
+		extendedKantaro[below] = res
 	end
-	return extendedKantaro[(L, below)]
+	return extendedKantaro[below]
 end
 
 # # Precompute fusion space basis
@@ -1041,6 +1041,8 @@ end
 	end
 end
 println()
+
+# function prepare
 
 
 #=
