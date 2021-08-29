@@ -441,10 +441,10 @@ function getExtendedKantaro(
 	return res
 end
 
-extendedKantaro_ = Dict{Tuple{Int64,Int64},Vector{Int64}}()
+extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
 
 function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
-	extendedKantaro::Dict{Tuple{Int64,Int64},Vector{Int64}},
+	extendedKantaro::Dict{Tuple{Int8,Int8},Vector{Int64}},
 	L::Int64, below::Int64)::Vector{Int64}
 	if !haskey(extendedKantaro, (L, below))
 		res = []
@@ -459,35 +459,39 @@ function getExtendedKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{In
 	return extendedKantaro[(L, below)]
 end
 
+# # Precompute fusion space basis
+# println("precompute fuison space bases for zipper...")
+# zipBases = fill([], L+1)
+# # zipBasesKantaro = fill([], L+1)
+# zipLen = fill(0, L+1)
+# zipFromInd = fill(Dict{Int64,Int32}(), L+1)
+# Threads.@threads for i = 1 : L+1
+# 	println(i,"/",L+1)
+# 	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
+# 	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
+# 	zipLen[i] = length(zipBases[i])
+# 	zipFromInd[i] = Dict((zipBases[i][x],Int32(x)) for x in 1 : zipLen[i])
+# end
+# # TODO
+# extendedKantaro_ = Dict{Tuple{Int8,Int8},Vector{Int64}}()
+# println()
+
 # Precompute fusion space basis
 println("precompute fuison space bases for zipper...")
-zipBases = fill([], L+1)
-# zipBasesKantaro = fill([], L+1)
 zipLen = fill(0, L+1)
 zipFromInd = fill(Dict(), L+1)
 Threads.@threads for i = 1 : L+1
 	println(i,"/",L+1)
 	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
-	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
-	zipLen[i] = length(zipBases[i])
-	zipFromInd[i] = Dict((zipBases[i][x],x) for x in 1 : zipLen[i])
+	# @time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
+	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
+	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,x) for x in 1 : zipLen[i])
 end
-# TODO
-extendedKantaro_ = Dict{Tuple{Int64,Int64},Vector{Int64}}()
 println()
 
-# # Precompute fusion space basis
-# println("precompute fuison space bases for zipper...")
-# zipLen = fill(0, L+1)
-# zipFromInd = fill(Dict(), L+1)
-# Threads.@threads for i = 1 : L+1
-# 	println(i,"/",L+1)
-# 	# @time zipBases[i] = filter(x -> (mainFlag(extendedFusionFlag_,x,L+2)==0), 4^(L+3)*i+1 : 4^(L+3)*i+3*4^(L+2))
-# 	@time zipBases[i] = [ x+1 for x in getExtendedKantaro(kantaro_, extendedKantaro_, L, i) ]
-# 	zipLen[i] = length(getExtendedKantaro(kantaro_, extendedKantaro_, L, i))
-# 	zipFromInd[i] = Dict((getExtendedKantaro(kantaro_, extendedKantaro_, L, i)[x]+1,x) for x in 1 : zipLen[i])
-# end
-# println()
+function zipBases(below::Int64, preind::Int64)
+	return getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind] + 1
+end
 
 #####
 
@@ -519,17 +523,17 @@ flag_ = zeros(Int64,len)
 
 function setFlag!(flag::Vector{Int64},preind::Int64,L::Int64=L)
 	ind = basis[preind]
-	flagshift=L+2
+	# flagshift=L+2
 	state=ind-1
 	below=(state>>(2*(L+1)))
 	start=(state>>(2*L))&3
 	state=state&(4^L-1)
 	if (start==3) || (below>=L)
-		flag[preind] |= 3 << flagshift
+		# flag[preind] |= 3 << flagshift
 		return
 	end
 	if state==0 && isodd(L)
-		flag[preind] |= 3 << flagshift
+		# flag[preind] |= 3 << flagshift
 		return
 	end
 	evenxs=iseven(trailingXs(state,L))
@@ -552,7 +556,7 @@ function setFlag!(flag::Vector{Int64},preind::Int64,L::Int64=L)
 		else
 			if(!evenxs)
 				# not allowed
-				flag[preind] |= 3 << flagshift
+				# flag[preind] |= 3 << flagshift
 				return
 			end
 			if a==2
@@ -568,10 +572,10 @@ function setFlag!(flag::Vector{Int64},preind::Int64,L::Int64=L)
 	end
 	tot%=3
 	if state==0 && isodd(L)
-		flag[preind] |= 3 << flagshift
+		# flag[preind] |= 3 << flagshift
 		return
 	end
-	flag[preind] |= tot << flagshift
+	# flag[preind] |= tot << flagshift
 end
 
 diag_ = zeros(Float64,len)
@@ -610,10 +614,10 @@ function stateFromInd(ind::Int64,L::Int64=L)
 	return state
 end
 
-function mainFlag(flag::Vector{Int64},preind::Int64,L::Int64=L)::Int8
-	flagshift=L+2
-	return (flag[preind] >> flagshift) & 3
-end
+# function mainFlag(flag::Vector{Int64},preind::Int64,L::Int64=L)::Int8
+# 	flagshift=L+2
+# 	return (flag[preind] >> flagshift) & 3
+# end
 
 function nextSite(i::Int64,L::Int64=L)
 	j=i+1
@@ -925,9 +929,9 @@ end
 Distinguished from Yuji's mainFlag by variable type.
 mainFlag(flag, ...) and mainFlag(fusionFlag, ...) return the same thing.
 =#
-function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
-	return flag[ind]
-end
+# function mainFlag(flag::Vector{Bool},ind::Int64,L::Int64=L)::Bool
+# 	return flag[ind]
+# end
 
 # #=
 # The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
@@ -978,7 +982,7 @@ right before the vertex from which ρ is draped below.
 =#
 function setEdgeAtDrapeMappings!(edgeAtDrapeMappings,below::Int64,preind::Int64)
 	# state = getExtendedKantaro(kantaro_, extendedKantaro_, L, below)[preind]
-	state = zipBases[below][preind]-1
+	state = zipBases(below,preind)-1
 	start = (state>>(2*(L+2))) & 3
 	state = state&(4^(L+2)-1)
 	evenxs=iseven(trailingXs(state,L+2))
@@ -1158,7 +1162,7 @@ function zip!(C,B,i::Int64)
 		C[preind] = 0
 	end
 	Threads.@threads for preind = 1 : zipLen[i]
-		ind = zipBases[i][preind]
+		ind = zipBases(i,preind)
 		if B[preind] == 0
 			continue
 		end
@@ -1182,7 +1186,7 @@ function buildZip(i::Int64)
 	row=Int64[]
 	val=Float64[]
 	for preind = 1 : zipLen[i]
-		ind = zipBases[i][preind]
+		ind = zipBases(i,preind)
 		e1 = Int64(edgeAtDrapeMappings_[i][preind])
 		state = stateFromInd(ind,L+2)
 		s1,s2 = localStatePair(state,i,L+2)
@@ -1209,7 +1213,7 @@ function detach!(C,B)
 		C[preind] = 0
 	end
 	Threads.@threads for preind = 1 : zipLen[L+1]
-		ind = zipBases[L+1][preind]
+		ind = zipBases(L+1,preind)
 		if B[preind] == 0
 			continue
 		end
@@ -1245,7 +1249,7 @@ function buildDetach()
 	row=Int64[]
 	val=Float64[]
 	for preind = 1 : zipLen[L]
-		ind = zipBases[L+1][preind]
+		ind = zipBases(L+1,preind)
 		state = stateFromInd(ind,L+2)
 		ni = 1+(state&(4^L-1))
 		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
