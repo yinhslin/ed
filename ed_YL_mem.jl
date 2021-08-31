@@ -231,9 +231,16 @@ function getExtendedKantaro(
 				for evenxs_left = false : true
 					for evenxs_right = false : true
 						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
+							# for state2 in getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2)
+							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
+							# end
+							states = getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2)
+							n = length(states)
+							toAppend = zeros(Int64, n)
+							Threads.@threads for i = 1 : n
+								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, 0 )
 							end
+							append!(res, toAppend)
 						end
 					end
 				end
@@ -245,9 +252,16 @@ function getExtendedKantaro(
 					evenxs_left = true
 					for evenxs_right = false : true
 						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
+							# for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
+							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
+							# end
+							states = getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
+							n = length(states)
+							toAppend = zeros(Int64, n)
+							Threads.@threads for i = 1 : n
+								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, s2 )
 							end
+							append!(res, toAppend)
 						end
 					end
 				end
@@ -259,9 +273,16 @@ function getExtendedKantaro(
 					evenxs_right = true
 					for evenxs_left = false : true
 						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, 0 ))
+							# for state2 in getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
+							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, 0 ))
+							# end
+							states = getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
+							n = length(states)
+							toAppend = zeros(Int64, n)
+							Threads.@threads for i = 1 : n
+								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, s1, 0 )
 							end
+							append!(res, toAppend)
 						end
 					end
 				end
@@ -274,9 +295,16 @@ function getExtendedKantaro(
 						evenxs_left = true
 						evenxs_right = true
 						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, s2 ))
+							# for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
+							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, s2 ))
+							# end
+							states = getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
+							n = length(states)
+							toAppend = zeros(Int64, n)
+							Threads.@threads for i = 1 : n
+								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, s1, s2 )
 							end
+							append!(res, toAppend)
 						end
 					end
 				end
@@ -291,19 +319,49 @@ function getExtendedKantaro(
 		tot = - (q2 - (q1 + start))
 		if mod(tot, 3) == start
 			if iseven(L1)
-				for state2 in getKantaro(kantaro, L2, true, true, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# for state2 in getKantaro(kantaro, L2, true, true, q2)
+				# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# end
+				# for state2 in getKantaro(kantaro, L2, false, false, q2)
+				# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# end
+				states = getKantaro(kantaro, L2, true, true, q2)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
 				end
-				for state2 in getKantaro(kantaro, L2, false, false, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				append!(res, toAppend)
+
+				states = getKantaro(kantaro, L2, false, false, q2)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
 				end
+				append!(res, toAppend)
 			else
-				for state2 in getKantaro(kantaro, L2, true, false, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# for state2 in getKantaro(kantaro, L2, true, false, q2)
+				# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# end
+				# for state2 in getKantaro(kantaro, L2, false, true, q2)
+				# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				# end
+				states = getKantaro(kantaro, L2, true, false, q2)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
 				end
-				for state2 in getKantaro(kantaro, L2, false, true, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				append!(res, toAppend)
+
+				states = getKantaro(kantaro, L2, false, true, q2)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
 				end
+				append!(res, toAppend)
 			end
 		end
 		# below is s1 = X, s2 ≂̸ X
@@ -311,13 +369,27 @@ function getExtendedKantaro(
 			tot = (s2 - 1) + q2 - (q1 + start)
 			if mod(tot, 3) == start
 				if iseven(L1)
-					for state2 in getKantaro(kantaro, L2, false, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					# for state2 in getKantaro(kantaro, L2, false, true, q2)
+					# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					# end
+					states = getKantaro(kantaro, L2, false, true, q2)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, s2 )
 					end
+					append!(res, toAppend)
 				else
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					# for state2 in getKantaro(kantaro, L2, true, true, q2)
+					# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					# end
+					states = getKantaro(kantaro, L2, true, true, q2)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, s2 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
@@ -326,13 +398,27 @@ function getExtendedKantaro(
 			tot = - (q2 + (s1 - 1) + (q1 + start))
 			if mod(tot, 3) == start
 				if iseven(L1)
-					for state2 in getKantaro(kantaro, L2, true, false, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					# for state2 in getKantaro(kantaro, L2, true, false, q2)
+					# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					# end
+					states = getKantaro(kantaro, L2, true, false, q2)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, 0 )
 					end
+					append!(res, toAppend)
 				else
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					# for state2 in getKantaro(kantaro, L2, true, true, q2)
+					# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					# end
+					states = getKantaro(kantaro, L2, true, true, q2)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, 0 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
@@ -341,9 +427,16 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start && iseven(L1)
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, s2 ))
+					# for state2 in getKantaro(kantaro, L2, true, true, q2)
+					# 	append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, s2 ))
+					# end
+					states = getKantaro(kantaro, L2, true, true, q2)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, s2 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
@@ -356,19 +449,49 @@ function getExtendedKantaro(
 		tot = - (q2 - (q1 + start))
 		if mod(tot, 3) == start
 			if iseven(L2)
-				for state1 in getKantaro(kantaro, L1, true, true, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# for state1 in getKantaro(kantaro, L1, true, true, q1)
+				# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# end
+				# for state1 in getKantaro(kantaro, L1, false, false, q1)
+				# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# end
+				states = getKantaro(kantaro, L1, true, true, q1)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
 				end
-				for state1 in getKantaro(kantaro, L1, false, false, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				append!(res, toAppend)
+
+				states = getKantaro(kantaro, L1, false, false, q1)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
 				end
+				append!(res, toAppend)
 			else
-				for state1 in getKantaro(kantaro, L1, true, false, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# for state1 in getKantaro(kantaro, L1, true, false, q1)
+				# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# end
+				# for state1 in getKantaro(kantaro, L1, false, true, q1)
+				# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				# end
+				states = getKantaro(kantaro, L1, true, false, q1)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
 				end
-				for state1 in getKantaro(kantaro, L1, false, true, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				append!(res, toAppend)
+
+				states = getKantaro(kantaro, L1, false, true, q1)
+				n = length(states)
+				toAppend = zeros(Int64, n)
+				Threads.@threads for i = 1 : n
+					toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
 				end
+				append!(res, toAppend)
 			end
 		end
 		# below is s1 = X, s2 ≂̸ X
@@ -376,13 +499,27 @@ function getExtendedKantaro(
 			tot = (s2 - 1) + q2 - (q1 + start)
 			if mod(tot, 3) == start
 				if iseven(L2)
-					for state1 in getKantaro(kantaro, L1, true, false, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					# for state1 in getKantaro(kantaro, L1, true, false, q1)
+					# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					# end
+					states = getKantaro(kantaro, L1, true, false, q1)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, s2 )
 					end
+					append!(res, toAppend)
 				else
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					# for state1 in getKantaro(kantaro, L1, true, true, q1)
+					# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					# end
+					states = getKantaro(kantaro, L1, true, true, q1)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, s2 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
@@ -391,13 +528,27 @@ function getExtendedKantaro(
 			tot = - (q2 + (s1 - 1) + (q1 + start))
 			if mod(tot, 3) == start
 				if iseven(L2)
-					for state1 in getKantaro(kantaro, L1, false, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					# for state1 in getKantaro(kantaro, L1, false, true, q1)
+					# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					# end
+					states = getKantaro(kantaro, L1, false, true, q1)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, 0 )
 					end
+					append!(res, toAppend)
 				else
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					# for state1 in getKantaro(kantaro, L1, true, true, q1)
+					# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					# end
+					states = getKantaro(kantaro, L1, true, true, q1)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, 0 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
@@ -406,9 +557,16 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start && iseven(L2)
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, s2 ))
+					# for state1 in getKantaro(kantaro, L1, true, true, q1)
+					# 	append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, s2 ))
+					# end
+					states = getKantaro(kantaro, L1, true, true, q1)
+					n = length(states)
+					toAppend = zeros(Int64, n)
+					Threads.@threads for i = 1 : n
+						toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, s2 )
 					end
+					append!(res, toAppend)
 				end
 			end
 		end
