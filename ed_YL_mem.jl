@@ -5,7 +5,7 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 14
+const L = 6
 const nev = 8
 const buildSparse = true
 
@@ -44,7 +44,6 @@ and takes the values 0 ...  4^L-1.
 # y, z, p, m are x, 0, +, - but with ρ draped below at that vertex
 const mapping=Dict('x'=>0, '0'=>1, '+'=>2, '-'=>3, 'y'=>0, 'z'=>1, 'p'=>2, 'm'=>3)
 const revmapping=Dict(0=>'x', 1=>'0', 2=>'+', 3=>'-')
-
 const startMapping = Dict('0'=>0, '1'=>1, '2'=>2)
 
 #=
@@ -123,14 +122,16 @@ end
 
 #=
 
-Divide-and-conquer stuff.
+Divide-and-conquer.
 
 =#
 
 
 # key is (L, evenxs_left, evenxs_right, Z3 charge)
+# value is state (not ind)
 kantaro_ = Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}()
 
+# initialize divide and conquer
 for el = false : true
 	for er = false : true
 		for q = 0 : 2
@@ -162,6 +163,7 @@ function setKantaro!(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	end
 end
 
+# basis of states (not inds)
 function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)::Vector{Int64}
 	if !haskey(kantaro, (L, evenxs_left, evenxs_right, q))
@@ -170,6 +172,7 @@ function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	return kantaro[(L, evenxs_left, evenxs_right, q)]
 end
 
+# basis of states (not inds)
 function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::Int64)::Vector{Int64}
 	res = []
 	append!(res, getKantaro(kantaro, L, true, true, 0))
@@ -188,11 +191,11 @@ const len = length(basis)
 println()
 
 
-# function basis[preind]
-	# return getKantaro(kantaro_, L)[preind] + 1
-# end
+#=
 
-#####
+Divide and conquer for extended chain.
+
+=#
 
 function extendedInd(
 	state1::Int64,
@@ -207,7 +210,7 @@ function extendedInd(
 	return 1 + state1 + (s1 << (2*L1)) + (state2 << (2*(L1+1))) + (s2 << (2*(L1+L2+1))) + (start << (2*(L1+L2+2))) + (below << (2*(L1+L2+3)))
 end
 
-# basis of states not inds
+# basis of inds (not states)
 function getExtendedKantaro(
 	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
@@ -441,7 +444,7 @@ function getExtendedKantaro(
 	return res
 end
 
-# basis of inds not states
+# basis of inds (not states)
 function getExtendedKantaro(
 	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
@@ -458,24 +461,6 @@ function getExtendedKantaro(
 	return res
 end
 
-# function setExtendedKantaro!(
-# 	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
-# 	extendedKantaro::Vector{Int64},
-# 	L::Int64,
-# 	below::Int64
-# 	)::Vector{Int64}
-#
-# 	res = []
-# 	for start = 0 : 2
-# 		append!(res, getExtendedKantaro(kantaro, L, start, below))
-# 		if iseven(L)
-# 			append!(res, 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
-# 		end
-# 	end
-# 	return res
-# 	# extendedKantaro = res
-# end
-
 #=
 TODO trailingXs is only used for inferring whether start label is type 1 or ρ.
 Might as well define a function that also checks whether state is 1 when L even.
@@ -490,16 +475,6 @@ function trailingXs(state::Int64,L::Int64=L)
 	return L-i
 end
 
-#=
-
-Modified to allow for nontrivial start/draped used in the zipper.
-
-But zipper only cares about the main flag, which is computed by setFusionFlag!,
-so might as well keep Yuji's original definition.
-
-=#
-
-# Changed to Int64 since Int32 will not be enough even for L=15.
 flag_ = zeros(Int32,len)
 
 function setFlag!(flag::Vector{Int32},preind::Int64,L::Int64=L)
@@ -695,32 +670,10 @@ function sortAndAppendColumn!(
 	end
 	push!(newMiniRow, oldr)
 	push!(newMinival, v)
-
 	push!(col, size(newMiniRow, 1))
 	append!(row, newMiniRow)
 	append!(val, newMinival)
 end
-
-# function appendColumnsAndReset!(
-# 	res,
-# 	col::Vector{Int32},
-# 	row::Vector{Int32},
-# 	val::Vector{Float32},
-# 	ncol::Int64
-# 	)
-# 	num = res.colptr[ncol]
-# 	for c in col
-# 		ncol += 1
-# 		num += c
-# 		res.colptr[ncol] = num
-# 	end
-# 	append!(res.rowval, row)
-# 	append!(res.nzval, val)
-# 	col=Int32[]
-# 	row=Int32[]
-# 	val=Float32[]
-# 	return ncol
-# end
 
 function buildH(diag,flag)
 	res = sparse(Int32[],Int32[],Float32[],len,len)
@@ -771,37 +724,8 @@ function buildH(diag,flag)
 		end
 
 		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
-		# # TODO define helper function
-		# # need to sort rows and also add values of coinciding rows
-		# perm = sortperm(miniRow)
-		# miniRow = miniRow[perm]
-		# miniVal = miniVal[perm]
-		# newMiniRow = Float32[]
-		# newMinival = Float32[]
-		# oldr = 0
-		# v = 0
-		# cnt = 0
-		# for r in miniRow
-		# 	cnt += 1
-		# 	if r == oldr || oldr == 0
-		# 		v += miniVal[cnt]
-		# 	else
-		# 		push!(newMiniRow, oldr)
-		# 		push!(newMinival, v)
-		# 		v = miniVal[cnt]
-		# 	end
-		# 	oldr = r
-		# end
-		# push!(newMiniRow, oldr)
-		# push!(newMinival, v)
-		#
-		# push!(col, size(newMiniRow, 1))
-		# append!(row, newMiniRow)
-		# append!(val, newMinival)
-		# # end
 
 		if (preind % (len / 10)) == 1 || preind == len
-			# ncol = appendColumnsAndReset!(res, col, row, val, ncol)
 			num = res.colptr[ncol]
 			for c in col
 				ncol += 1
@@ -905,7 +829,7 @@ end
 attachPreind(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2) = zipFromInd[attachInd(ind,sp,start,L)]
 
 function attach!(C,B)
-	for preind = 1 : ziplen
+	Threads.@threads for preind = 1 : ziplen
 		C[preind] = 0
 	end
 	for preind = 1 : len
@@ -994,7 +918,7 @@ end
 zipPreInd(i::Int64,ind::Int64,sp::Tuple{Int64,Int64},L::Int64=L+2) = zipFromInd[zipInd(ind,sp,L)]
 
 function zip!(C,B,i::Int64)
-	for preind = 1 : ziplen
+	Threads.@threads for preind = 1 : ziplen
 		C[preind] = 0
 	end
 	for preind = 1 : ziplen
@@ -1063,7 +987,7 @@ function buildZip(i::Int64)
 end
 
 function detach!(C,B)
-	for preind = 1 : len
+	Threads.@threads for preind = 1 : len
 		C[preind] = 0
 	end
 	for preind = 1 : ziplen
@@ -1172,20 +1096,7 @@ end
 
 #####
 
-# inBasis = basis
-inBasis = basis
-outBasis = getExtendedKantaro(kantaro_, L, 1)
-ziplen = length(outBasis)
-zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
-edgeAtDrapeMapping = zeros(Int8,ziplen)
-
-function prepare!(
-	below::Int64,
-	# inBasis::Vector{Int64},
-	# outBasis::Vector{Int64},
-	# zipFromInd::Dict{Int64,Int32},
-	# edgeAtDrapeMapping::Vector{Int8}
-	)
+function prepare!(below::Int64)
 	if below == 0
 		global inBasis = basis
 	else
@@ -1195,7 +1106,9 @@ function prepare!(
 		global outBasis = basis
 		global zipFromInd = fromInd
 	else
-		global outBasis = getExtendedKantaro(kantaro_, L, below+1)
+		if L > 0
+			global outBasis = getExtendedKantaro(kantaro_, L, below+1)
+		end
 		global zipFromInd = Dict((outBasis[x],Int32(x)) for x in 1 : ziplen)
 	end
 	if 1 <= below <= L
@@ -1206,11 +1119,17 @@ function prepare!(
 	end
 end
 
+println("prepare attach...")
+inBasis = basis
+outBasis = getExtendedKantaro(kantaro_, L, 1)
+ziplen = length(outBasis)
+zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
+edgeAtDrapeMapping = zeros(Int8,ziplen)
+@time prepare!(0)
+
 function ρMatrix(v)
 	u = copy(v)
 	if !buildSparse
-		println("prepare attach...")
-		@time prepare!(0)
 		ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
 		println("act attach...")
 		@time u = Matrix(ρ * u)
@@ -1227,8 +1146,8 @@ function ρMatrix(v)
 		println("act detach...")
 		@time u = Matrix(ρ * u)
 	else
-		println("prepare attach...")
-		@time prepare!(0)
+		# println("prepare attach...")
+		# @time prepare!(0)
 		println("build attach...")
 		@time ρ = buildAttach()
 		println("act attach...")
