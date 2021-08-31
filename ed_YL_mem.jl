@@ -5,7 +5,7 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 15
+const L = 3
 const nev = 8
 const buildSparse = true
 
@@ -667,84 +667,141 @@ println()
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
+function sortAndAppendColumn!(
+	col::Vector{Int32},
+	row::Vector{Int32},
+	val::Vector{Float64},
+	miniRow::Vector{Int64},
+	miniVal::Vector{Float64}
+	)
+	perm = sortperm(miniRow)
+	miniRow = miniRow[perm]
+	miniVal = miniVal[perm]
+	newMiniRow = Int32[]
+	newMinival = Float64[]
+	oldr = 0
+	v = 0
+	cnt = 0
+	for r in miniRow
+		cnt += 1
+		if r == oldr || oldr == 0
+			v += miniVal[cnt]
+		else
+			push!(newMiniRow, oldr)
+			push!(newMinival, v)
+			v = miniVal[cnt]
+		end
+		oldr = r
+	end
+	push!(newMiniRow, oldr)
+	push!(newMinival, v)
+
+	push!(col, size(newMiniRow, 1))
+	append!(row, newMiniRow)
+	append!(val, newMinival)
+end
+
+# function appendColumnsAndReset!(
+# 	res,
+# 	col::Vector{Int32},
+# 	row::Vector{Int32},
+# 	val::Vector{Float64},
+# 	ncol::Int64
+# 	)
+# 	num = res.colptr[ncol]
+# 	for c in col
+# 		ncol += 1
+# 		num += c
+# 		res.colptr[ncol] = num
+# 	end
+# 	append!(res.rowval, row)
+# 	append!(res.nzval, val)
+# 	col=Int32[]
+# 	row=Int32[]
+# 	val=Float64[]
+# 	return ncol
+# end
+
 function buildH(diag,flag)
-	res = sparse(Int64[],Int64[],Float64[],len,len)
-	col=Int64[]
-	row=Int64[]
+	res = sparse(Int32[],Int32[],Float64[],len,len)
+	col=Int32[]
+	row=Int32[]
 	val=Float64[]
 	ncol = 1
 	for preind = 1 : len
 		ind = basis[preind]
 		state=stateFromInd(ind)
 		# cannot directly append into row, val because row needs to be ordered
-		# define minirow/val and append to row/val after sorting
-		minirow = [preind]
-		minival = [diag[preind]]
+		# define miniRow/val and append to row/val after sorting
+		miniRow = [preind]
+		miniVal = [diag[preind]]
 		for i = 1 : L
 			sp=localStatePair(state,i)
 			if sp==sXX  && isρ1ρ(flag,preind,i)
-				append!(minirow,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
-				append!(minival,-ξ .* [y1,y2,x])
+				append!(miniRow,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
+				append!(miniVal,-ξ .* [y1,y2,x])
 			elseif sp==sPM
-				append!(minirow,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
-				append!(minival,-y1 .* [ξ,y2,x])
+				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
+				append!(miniVal,-y1 .* [ξ,y2,x])
 			elseif sp==sMP
-				append!(minirow,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
-				append!(minival,-y2 .* [ξ,y1,x])
+				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
+				append!(miniVal,-y2 .* [ξ,y1,x])
 			elseif sp==s00
-				append!(minirow,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
-				append!(minival,-x .* [ξ,y1,y2])
+				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
+				append!(miniVal,-x .* [ξ,y1,y2])
 			elseif sp==s0P
-				append!(minirow,map(s->newPreind(state,i,s),[sP0,sMM]))
-				append!(minival,-y1 .* [y2,z])
+				append!(miniRow,map(s->newPreind(state,i,s),[sP0,sMM]))
+				append!(miniVal,-y1 .* [y2,z])
 			elseif sp==sP0
-				append!(minirow,map(s->newPreind(state,i,s),[s0P,sMM]))
-				append!(minival,-y2 .* [y1,z])
+				append!(miniRow,map(s->newPreind(state,i,s),[s0P,sMM]))
+				append!(miniVal,-y2 .* [y1,z])
 			elseif sp==sMM
-				append!(minirow,map(s->newPreind(state,i,s),[s0P,sP0]))
-				append!(minival,-z .* [y1,y2])
+				append!(miniRow,map(s->newPreind(state,i,s),[s0P,sP0]))
+				append!(miniVal,-z .* [y1,y2])
 			elseif sp==s0M
-				append!(minirow,map(s->newPreind(state,i,s),[sM0,sPP]))
-				append!(minival,-y2 .* [y1,z])
+				append!(miniRow,map(s->newPreind(state,i,s),[sM0,sPP]))
+				append!(miniVal,-y2 .* [y1,z])
 			elseif sp==sM0
-				append!(minirow,map(s->newPreind(state,i,s),[s0M,sPP]))
-				append!(minival,-y1 .* [y2,z])
+				append!(miniRow,map(s->newPreind(state,i,s),[s0M,sPP]))
+				append!(miniVal,-y1 .* [y2,z])
 			elseif sp==sPP
-				append!(minirow,map(s->newPreind(state,i,s),[s0M,sM0]))
-				append!(minival,-z .* [y2,y1])
+				append!(miniRow,map(s->newPreind(state,i,s),[s0M,sM0]))
+				append!(miniVal,-z .* [y2,y1])
 			end
 		end
 
-		# TODO define helper function
-		# need to sort rows and also add values of coinciding rows
-		perm = sortperm(minirow)
-		minirow = minirow[perm]
-		minival = minival[perm]
-		newrow = Float64[]
-		newval = Float64[]
-		oldr = 0
-		v = 0
-		cnt = 0
-		for r in minirow
-			cnt += 1
-			if r == oldr || oldr == 0
-				v += minival[cnt]
-			else
-				push!(newrow, oldr)
-				push!(newval, v)
-				v = minival[cnt]
-			end
-			oldr = r
-		end
-		push!(newrow, oldr)
-		push!(newval, v)
-
-		push!(col, size(newrow, 1))
-		append!(row, newrow)
-		append!(val, newval)
+		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
+		# # TODO define helper function
+		# # need to sort rows and also add values of coinciding rows
+		# perm = sortperm(miniRow)
+		# miniRow = miniRow[perm]
+		# miniVal = miniVal[perm]
+		# newMiniRow = Float64[]
+		# newMinival = Float64[]
+		# oldr = 0
+		# v = 0
+		# cnt = 0
+		# for r in miniRow
+		# 	cnt += 1
+		# 	if r == oldr || oldr == 0
+		# 		v += miniVal[cnt]
+		# 	else
+		# 		push!(newMiniRow, oldr)
+		# 		push!(newMinival, v)
+		# 		v = miniVal[cnt]
+		# 	end
+		# 	oldr = r
 		# end
+		# push!(newMiniRow, oldr)
+		# push!(newMinival, v)
+		#
+		# push!(col, size(newMiniRow, 1))
+		# append!(row, newMiniRow)
+		# append!(val, newMinival)
+		# # end
 
 		if (preind % (len / 10)) == 1 || preind == len
+			# ncol = appendColumnsAndReset!(res, col, row, val, ncol)
 			num = res.colptr[ncol]
 			for c in col
 				ncol += 1
@@ -753,13 +810,13 @@ function buildH(diag,flag)
 			end
 			append!(res.rowval, row)
 			append!(res.nzval, val)
-			col=Int64[]
-			row=Int64[]
+			col=Int32[]
+			row=Int32[]
 			val=Float64[]
 		end
 		append!(res.rowval, row)
 		append!(res.nzval, val)
-		row=Int64[]
+		row=Int32[]
 		val=Float64[]
 	end
 	return res
@@ -960,11 +1017,15 @@ function zip!(C,B,i::Int64)
 	end
 end
 
-function buildZip(i::Int64)
-	col=Int64[]
-	row=Int64[]
+function buildZipAlt(i::Int64)
+	res = sparse(Int32[],Int32[],Float64[],ziplen,ziplen)
+	col=Int32[]
+	row=Int32[]
 	val=Float64[]
+	ncol = 1
 	for preind = 1 : ziplen
+		miniRow = Int64[]
+		miniVal = Float64[]
 		ind = inBasis[preind]
 		e1 = Int64(edgeAtDrapeMapping[preind])
 		state = stateFromInd(ind,L+2)
@@ -975,17 +1036,58 @@ function buildZip(i::Int64)
 					continue
 				end
 				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
-				append!(col,[preind])
-				append!(row,[ni])
-				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
+				append!(miniRow,[ni])
+				append!(miniVal,[FSymbolZipper(e1,s1,s2,s3,s4)])
 			end
 		end
+		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
+		if (preind % (ziplen / 10)) == 1 || preind == ziplen
+			num = res.colptr[ncol]
+			for c in col
+				ncol += 1
+				num += c
+				res.colptr[ncol] = num
+			end
+			append!(res.rowval, row)
+			append!(res.nzval, val)
+			col=Int32[]
+			row=Int32[]
+			val=Float64[]
+		end
+		append!(res.rowval, row)
+		append!(res.nzval, val)
+		row=Int32[]
+		val=Float64[]
 	end
-	append!(col,[ziplen])
-	append!(row,[ziplen])
-	append!(val,[0])
-	return sparse(row,col,val)
+	return res
 end
+
+# function buildZip(i::Int64)
+# 	col=Int32[]
+# 	row=Int32[]
+# 	val=Float64[]
+# 	for preind = 1 : ziplen
+# 		ind = inBasis[preind]
+# 		e1 = Int64(edgeAtDrapeMapping[preind])
+# 		state = stateFromInd(ind,L+2)
+# 		s1,s2 = localStatePair(state,i,L+2)
+# 		for s3 = 0 : 3
+# 			for s4 = 0 : 3
+# 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
+# 					continue
+# 				end
+# 				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
+# 				append!(col,[preind])
+# 				append!(row,[ni])
+# 				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
+# 			end
+# 		end
+# 	end
+# 	append!(col,[ziplen])
+# 	append!(row,[ziplen])
+# 	append!(val,[0])
+# 	return sparse(row,col,val)
+# end
 
 function detach!(C,B)
 	for preind = 1 : len
