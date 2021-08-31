@@ -5,7 +5,7 @@ using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
 
-const L = 3
+const L = 14
 const nev = 8
 const buildSparse = true
 
@@ -129,7 +129,7 @@ Divide-and-conquer stuff.
 
 
 # key is (L, evenxs_left, evenxs_right, Z3 charge)
-kantaro_ = Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}}()
+kantaro_ = Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}()
 
 for el = false : true
 	for er = false : true
@@ -143,7 +143,7 @@ kantaro_[(1, true, true, 0)] = [ 1 ]
 kantaro_[(1, true, true, 1)] = [ 2 ]
 kantaro_[(1, true, true, 2)] = [ 3 ]
 
-function setKantaro!(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+function setKantaro!(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)
 	kantaro[(L, evenxs_left, evenxs_right, q)] = []
 	if evenxs_right
@@ -162,7 +162,7 @@ function setKantaro!(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
 	end
 end
 
-function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)::Vector{Int64}
 	if !haskey(kantaro, (L, evenxs_left, evenxs_right, q))
 		setKantaro!(kantaro, L, evenxs_left, evenxs_right, q)
@@ -170,7 +170,7 @@ function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
 	return kantaro[(L, evenxs_left, evenxs_right, q)]
 end
 
-function getKantaro(kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}}, L::Int64)::Vector{Int64}
+function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::Int64)::Vector{Int64}
 	res = []
 	append!(res, getKantaro(kantaro, L, true, true, 0))
 	append!(res, getKantaro(kantaro, L, false, false, 0))
@@ -209,7 +209,7 @@ end
 
 # basis of states not inds
 function getExtendedKantaro(
-	kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
 	start::Int64,
 	below::Int64
@@ -443,7 +443,7 @@ end
 
 # basis of inds not states
 function getExtendedKantaro(
-	kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
 	below::Int64
 	)::Vector{Int64}
@@ -459,7 +459,7 @@ function getExtendedKantaro(
 end
 
 # function setExtendedKantaro!(
-# 	kantaro::Dict{Tuple{Int64,Bool,Bool,Int64},Vector{Int64}},
+# 	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 # 	extendedKantaro::Vector{Int64},
 # 	L::Int64,
 # 	below::Int64
@@ -552,7 +552,7 @@ function setFlag!(flag::Vector{Int32},preind::Int64,L::Int64=L)
 	end
 end
 
-diag_ = zeros(Float64,len)
+diag_ = zeros(Float32,len)
 
 const ζ = (√(13)+3)/2
 const ξ = 1/√ζ
@@ -605,7 +605,7 @@ function isρ1ρ(flag::Vector{Int32},preind::Int64,i::Int64)
 	return ((flag[preind] >> (i-1)) & 1) == 1
 end
 
-function computeDiag!(diag::Vector{Float64},flag::Vector{Int32},preind::Int64)
+function computeDiag!(diag::Vector{Float32},flag::Vector{Int32},preind::Int64)
 	ind = basis[preind]
 	state=stateFromInd(ind)
 	diag[preind]=0
@@ -670,15 +670,15 @@ newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 function sortAndAppendColumn!(
 	col::Vector{Int32},
 	row::Vector{Int32},
-	val::Vector{Float64},
+	val::Vector{Float32},
 	miniRow::Vector{Int64},
-	miniVal::Vector{Float64}
+	miniVal::Vector{Float32}
 	)
 	perm = sortperm(miniRow)
 	miniRow = miniRow[perm]
 	miniVal = miniVal[perm]
 	newMiniRow = Int32[]
-	newMinival = Float64[]
+	newMinival = Float32[]
 	oldr = 0
 	v = 0
 	cnt = 0
@@ -705,7 +705,7 @@ end
 # 	res,
 # 	col::Vector{Int32},
 # 	row::Vector{Int32},
-# 	val::Vector{Float64},
+# 	val::Vector{Float32},
 # 	ncol::Int64
 # 	)
 # 	num = res.colptr[ncol]
@@ -718,15 +718,15 @@ end
 # 	append!(res.nzval, val)
 # 	col=Int32[]
 # 	row=Int32[]
-# 	val=Float64[]
+# 	val=Float32[]
 # 	return ncol
 # end
 
 function buildH(diag,flag)
-	res = sparse(Int32[],Int32[],Float64[],len,len)
+	res = sparse(Int32[],Int32[],Float32[],len,len)
 	col=Int32[]
 	row=Int32[]
-	val=Float64[]
+	val=Float32[]
 	ncol = 1
 	for preind = 1 : len
 		ind = basis[preind]
@@ -776,8 +776,8 @@ function buildH(diag,flag)
 		# perm = sortperm(miniRow)
 		# miniRow = miniRow[perm]
 		# miniVal = miniVal[perm]
-		# newMiniRow = Float64[]
-		# newMinival = Float64[]
+		# newMiniRow = Float32[]
+		# newMinival = Float32[]
 		# oldr = 0
 		# v = 0
 		# cnt = 0
@@ -812,12 +812,12 @@ function buildH(diag,flag)
 			append!(res.nzval, val)
 			col=Int32[]
 			row=Int32[]
-			val=Float64[]
+			val=Float32[]
 		end
 		append!(res.rowval, row)
 		append!(res.nzval, val)
 		row=Int32[]
-		val=Float64[]
+		val=Float32[]
 	end
 	return res
 end
@@ -931,9 +931,9 @@ function attach!(C,B)
 end
 
 function buildAttach()
-	col=Int64[]
-	row=Int64[]
-	val=Float64[]
+	col=Int32[]
+	row=Int32[]
+	val=Float32[]
 	for preind = 1 : len
 		ind = basis[preind]
 		state = stateFromInd(ind)
@@ -1017,15 +1017,15 @@ function zip!(C,B,i::Int64)
 	end
 end
 
-function buildZipAlt(i::Int64)
-	res = sparse(Int32[],Int32[],Float64[],ziplen,ziplen)
+function buildZip(i::Int64)
+	res = sparse(Int32[],Int32[],Float32[],ziplen,ziplen)
 	col=Int32[]
 	row=Int32[]
-	val=Float64[]
+	val=Float32[]
 	ncol = 1
 	for preind = 1 : ziplen
 		miniRow = Int64[]
-		miniVal = Float64[]
+		miniVal = Float32[]
 		ind = inBasis[preind]
 		e1 = Int64(edgeAtDrapeMapping[preind])
 		state = stateFromInd(ind,L+2)
@@ -1052,42 +1052,15 @@ function buildZipAlt(i::Int64)
 			append!(res.nzval, val)
 			col=Int32[]
 			row=Int32[]
-			val=Float64[]
+			val=Float32[]
 		end
 		append!(res.rowval, row)
 		append!(res.nzval, val)
 		row=Int32[]
-		val=Float64[]
+		val=Float32[]
 	end
 	return res
 end
-
-# function buildZip(i::Int64)
-# 	col=Int32[]
-# 	row=Int32[]
-# 	val=Float64[]
-# 	for preind = 1 : ziplen
-# 		ind = inBasis[preind]
-# 		e1 = Int64(edgeAtDrapeMapping[preind])
-# 		state = stateFromInd(ind,L+2)
-# 		s1,s2 = localStatePair(state,i,L+2)
-# 		for s3 = 0 : 3
-# 			for s4 = 0 : 3
-# 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-# 					continue
-# 				end
-# 				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
-# 				append!(col,[preind])
-# 				append!(row,[ni])
-# 				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
-# 			end
-# 		end
-# 	end
-# 	append!(col,[ziplen])
-# 	append!(row,[ziplen])
-# 	append!(val,[0])
-# 	return sparse(row,col,val)
-# end
 
 function detach!(C,B)
 	for preind = 1 : len
@@ -1123,9 +1096,9 @@ function detach!(C,B)
 end
 
 function buildDetach()
-	col=Int64[]
-	row=Int64[]
-	val=Float64[]
+	col=Int32[]
+	row=Int32[]
+	val=Float32[]
 	for preind = 1 : ziplen
 		ind = inBasis[preind]
 		state = stateFromInd(ind,L+2)
@@ -1285,7 +1258,7 @@ end
 
 #=
 
-Translation (lattice shift) stuff.
+Translation (lattice shift).
 
 =#
 
@@ -1321,7 +1294,7 @@ Simultaneous diagonalization and output.
 =#
 
 # Print as mathematica array to reuse Mathematica code for making plots.
-function mathematicaVector(V::Vector{Float64})
+function mathematicaVector(V)
 	s="{"
 	for i = 1:(size(V,1)-1)
 		s*=string(V[i])
@@ -1333,7 +1306,7 @@ function mathematicaVector(V::Vector{Float64})
 end
 
 # Print as mathematica matrix to reuse Mathematica code for making plots.
-function mathematicaMatrix(M::Vector{Vector{Float64}})
+function mathematicaMatrix(M)
 	s="{\n"
 	for i = 1:(size(M,1)-1)
 		s*=mathematicaVector(M[i])
@@ -1344,36 +1317,12 @@ function mathematicaMatrix(M::Vector{Vector{Float64}})
 	return s
 end
 
-# function computeρMatrix(v)
-
-# 	inBasis = basis
-# 	outBasis =
-#
-# 	println("build attach...")
-# 	@time ρ = LinearMap(buildAttach())
-# 	vρ = ρ * v
-#
-# 	for i = 1 : L
-# 		println("build zip ", i, "...")
-# 		@time global zips[i] = LinearMap(buildZip(i))
-# 	end
-# 	println("multiply zip...")
-# 	@time for i = 1 : L
-# 		global ρ = zips[i] * ρ
-# 	end
-#
-# 	println("build detach...")
-# 	@time ρ = LinearMap(buildDetach()) * ρ
-# 	println()
-# end
-
 function diagonalizeHTρ(e,v,T)
 	println("diagonalizing H,T,ρ...")
 
 	smallH = Matrix(diagm(e))
 	smallT = Matrix(adjoint(v)*T*v)
 	smallρ = ρMatrix(v)
-	# Matrix(adjoint(v)*ρ*v)
 	smalle,smallv = eigen(smallH+smallT+smallρ)
 
 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
