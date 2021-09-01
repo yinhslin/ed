@@ -10,8 +10,10 @@ const nev = 100
 const buildSparse = true
 
 println()
+flush(stdout)
 println("exact diagonalization of L=", L, " with build sparse=", buildSparse, " and keeping nev=", nev)
 println()
+flush(stdout)
 
 #=
 
@@ -129,54 +131,54 @@ Divide-and-conquer.
 
 # key is (L, evenxs_left, evenxs_right, Z3 charge)
 # value is state (not ind)
-kantaro_ = Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}()
+basisLego_ = Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}()
 
 # initialize divide and conquer
 for el = false : true
 	for er = false : true
 		for q = 0 : 2
-			kantaro_[(0, el, er, q)] = []
-			kantaro_[(1, el, er, q)] = []
+			basisLego_[(0, el, er, q)] = []
+			basisLego_[(1, el, er, q)] = []
 		end
 	end
 end
-kantaro_[(1, true, true, 0)] = [ 1 ]
-kantaro_[(1, true, true, 1)] = [ 2 ]
-kantaro_[(1, true, true, 2)] = [ 3 ]
+basisLego_[(1, true, true, 0)] = [ 1 ]
+basisLego_[(1, true, true, 1)] = [ 2 ]
+basisLego_[(1, true, true, 2)] = [ 3 ]
 
-function setKantaro!(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+function setBasisLego!(basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)
-	kantaro[(L, evenxs_left, evenxs_right, q)] = []
+	basisLego[(L, evenxs_left, evenxs_right, q)] = []
 	if evenxs_right
 		# append X
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], getKantaro(kantaro, L-1, evenxs_left, false, q) )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], getBasisLego(basisLego, L-1, evenxs_left, false, q) )
 		# append non-X
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (1 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, q) ] )
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (2 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+2)%3) ] )
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ x + (3 << (2*(L-1))) for x in getKantaro(kantaro, L-1, evenxs_left, true, (q+1)%3) ] )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], [ x + (1 << (2*(L-1))) for x in getBasisLego(basisLego, L-1, evenxs_left, true, q) ] )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], [ x + (2 << (2*(L-1))) for x in getBasisLego(basisLego, L-1, evenxs_left, true, (q+2)%3) ] )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], [ x + (3 << (2*(L-1))) for x in getBasisLego(basisLego, L-1, evenxs_left, true, (q+1)%3) ] )
 	else
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], getKantaro(kantaro, L-1, evenxs_left, true, q) )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], getBasisLego(basisLego, L-1, evenxs_left, true, q) )
 	end
 	if ((iseven(L) && !evenxs_left) || (isodd(L) && evenxs_left)) && evenxs_right
 		# append non-X to XX...X
-		append!( kantaro[(L, evenxs_left, evenxs_right, q)], [ (q+1) << (2*(L-1)) ] )
+		append!( basisLego[(L, evenxs_left, evenxs_right, q)], [ (q+1) << (2*(L-1)) ] )
 	end
 end
 
 # basis of states (not inds)
-function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+function getBasisLego(basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64, evenxs_left::Bool, evenxs_right::Bool, q::Int64)::Vector{Int64}
-	if !haskey(kantaro, (L, evenxs_left, evenxs_right, q))
-		setKantaro!(kantaro, L, evenxs_left, evenxs_right, q)
+	if !haskey(basisLego, (L, evenxs_left, evenxs_right, q))
+		setBasisLego!(basisLego, L, evenxs_left, evenxs_right, q)
 	end
-	return kantaro[(L, evenxs_left, evenxs_right, q)]
+	return basisLego[(L, evenxs_left, evenxs_right, q)]
 end
 
 # basis of states (not inds)
-function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::Int64)::Vector{Int64}
+function getBasisLego(basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::Int64)::Vector{Int64}
 	res = []
-	append!(res, getKantaro(kantaro, L, true, true, 0))
-	append!(res, getKantaro(kantaro, L, false, false, 0))
+	append!(res, getBasisLego(basisLego, L, true, true, 0))
+	append!(res, getBasisLego(basisLego, L, false, false, 0))
 	if iseven(L)
 		append!(res, [0, 1])
 	end
@@ -185,10 +187,11 @@ function getKantaro(kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::
 end
 
 println("computing basis...")
-@time const basis = [ x+1 for x in getKantaro(kantaro_, L) ]
+@time const basis = [ x+1 for x in getBasisLego(basisLego_, L) ]
 const len = length(basis)
 @time const fromInd = Dict((basis[x],x) for x in 1:len)
 println()
+flush(stdout)
 
 
 #=
@@ -211,8 +214,8 @@ function extendedInd(
 end
 
 # basis of inds (not states)
-function getExtendedKantaro(
-	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+function getExtendedBasis(
+	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
 	start::Int64,
 	below::Int64
@@ -230,17 +233,17 @@ function getExtendedKantaro(
 			if mod(tot, 3) == start
 				for evenxs_left = false : true
 					for evenxs_right = false : true
-						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							# for state2 in getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2)
-							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
-							# end
-							states = getKantaro(kantaro, L2, !evenxs_right, !evenxs_left, q2)
-							n = length(states)
-							toAppend = zeros(Int64, n)
-							Threads.@threads for i = 1 : n
-								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, 0 )
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, !evenxs_right, !evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
 							end
-							append!(res, toAppend)
+							# states = getBasisLego(basisLego, L2, !evenxs_right, !evenxs_left, q2)
+							# n = length(states)
+							# toAppend = zeros(Int64, n)
+							# Threads.@threads for i = 1 : n
+							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, 0 )
+							# end
+							# append!(res, toAppend)
 						end
 					end
 				end
@@ -251,17 +254,17 @@ function getExtendedKantaro(
 				if mod(tot, 3) == start
 					evenxs_left = true
 					for evenxs_right = false : true
-						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							# for state2 in getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
-							# 	append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
-							# end
-							states = getKantaro(kantaro, L2, !evenxs_right, evenxs_left, q2)
-							n = length(states)
-							toAppend = zeros(Int64, n)
-							Threads.@threads for i = 1 : n
-								toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, s2 )
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, !evenxs_right, evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
 							end
-							append!(res, toAppend)
+							# states = getBasisLego(basisLego, L2, !evenxs_right, evenxs_left, q2)
+							# n = length(states)
+							# toAppend = zeros(Int64, n)
+							# Threads.@threads for i = 1 : n
+							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, s2 )
+							# end
+							# append!(res, toAppend)
 						end
 					end
 				end
@@ -272,11 +275,11 @@ function getExtendedKantaro(
 				if mod(tot, 3) == start
 					evenxs_right = true
 					for evenxs_left = false : true
-						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, evenxs_right, !evenxs_left, q2)
 								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, 0 ))
 							end
-							# states = getKantaro(kantaro, L2, evenxs_right, !evenxs_left, q2)
+							# states = getBasisLego(basisLego, L2, evenxs_right, !evenxs_left, q2)
 							# n = length(states)
 							# toAppend = zeros(Int64, n)
 							# Threads.@threads for i = 1 : n
@@ -294,11 +297,11 @@ function getExtendedKantaro(
 					if mod(tot, 3) == start
 						evenxs_left = true
 						evenxs_right = true
-						for state1 in getKantaro(kantaro, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, evenxs_right, evenxs_left, q2)
 								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, s2 ))
 							end
-							# states = getKantaro(kantaro, L2, evenxs_right, evenxs_left, q2)
+							# states = getBasisLego(basisLego, L2, evenxs_right, evenxs_left, q2)
 							# n = length(states)
 							# toAppend = zeros(Int64, n)
 							# Threads.@threads for i = 1 : n
@@ -319,13 +322,13 @@ function getExtendedKantaro(
 		tot = - (q2 - (q1 + start))
 		if mod(tot, 3) == start
 			if iseven(L1)
-				for state2 in getKantaro(kantaro, L2, true, true, q2)
+				for state2 in getBasisLego(basisLego, L2, true, true, q2)
 					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
 				end
-				for state2 in getKantaro(kantaro, L2, false, false, q2)
+				for state2 in getBasisLego(basisLego, L2, false, false, q2)
 					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
 				end
-				# states = getKantaro(kantaro, L2, true, true, q2)
+				# states = getBasisLego(basisLego, L2, true, true, q2)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -333,7 +336,7 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 				#
-				# states = getKantaro(kantaro, L2, false, false, q2)
+				# states = getBasisLego(basisLego, L2, false, false, q2)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -341,13 +344,13 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 			else
-				for state2 in getKantaro(kantaro, L2, true, false, q2)
+				for state2 in getBasisLego(basisLego, L2, true, false, q2)
 					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
 				end
-				for state2 in getKantaro(kantaro, L2, false, true, q2)
+				for state2 in getBasisLego(basisLego, L2, false, true, q2)
 					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
 				end
-				# states = getKantaro(kantaro, L2, true, false, q2)
+				# states = getBasisLego(basisLego, L2, true, false, q2)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -355,7 +358,7 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 				#
-				# states = getKantaro(kantaro, L2, false, true, q2)
+				# states = getBasisLego(basisLego, L2, false, true, q2)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -369,10 +372,10 @@ function getExtendedKantaro(
 			tot = (s2 - 1) + q2 - (q1 + start)
 			if mod(tot, 3) == start
 				if iseven(L1)
-					for state2 in getKantaro(kantaro, L2, false, true, q2)
+					for state2 in getBasisLego(basisLego, L2, false, true, q2)
 						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
 					end
-					# states = getKantaro(kantaro, L2, false, true, q2)
+					# states = getBasisLego(basisLego, L2, false, true, q2)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -380,10 +383,10 @@ function getExtendedKantaro(
 					# end
 					# append!(res, toAppend)
 				else
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
 						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
 					end
-					# states = getKantaro(kantaro, L2, true, true, q2)
+					# states = getBasisLego(basisLego, L2, true, true, q2)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -398,10 +401,10 @@ function getExtendedKantaro(
 			tot = - (q2 + (s1 - 1) + (q1 + start))
 			if mod(tot, 3) == start
 				if iseven(L1)
-					for state2 in getKantaro(kantaro, L2, true, false, q2)
+					for state2 in getBasisLego(basisLego, L2, true, false, q2)
 						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
 					end
-					# states = getKantaro(kantaro, L2, true, false, q2)
+					# states = getBasisLego(basisLego, L2, true, false, q2)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -409,10 +412,10 @@ function getExtendedKantaro(
 					# end
 					# append!(res, toAppend)
 				else
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
 						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
 					end
-					# states = getKantaro(kantaro, L2, true, true, q2)
+					# states = getBasisLego(basisLego, L2, true, true, q2)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -427,10 +430,10 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start && iseven(L1)
-					for state2 in getKantaro(kantaro, L2, true, true, q2)
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
 						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, s2 ))
 					end
-					# states = getKantaro(kantaro, L2, true, true, q2)
+					# states = getBasisLego(basisLego, L2, true, true, q2)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -449,13 +452,13 @@ function getExtendedKantaro(
 		tot = - (q2 - (q1 + start))
 		if mod(tot, 3) == start
 			if iseven(L2)
-				for state1 in getKantaro(kantaro, L1, true, true, q1)
+				for state1 in getBasisLego(basisLego, L1, true, true, q1)
 					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
 				end
-				for state1 in getKantaro(kantaro, L1, false, false, q1)
+				for state1 in getBasisLego(basisLego, L1, false, false, q1)
 					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
 				end
-				# states = getKantaro(kantaro, L1, true, true, q1)
+				# states = getBasisLego(basisLego, L1, true, true, q1)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -463,7 +466,7 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 				#
-				# states = getKantaro(kantaro, L1, false, false, q1)
+				# states = getBasisLego(basisLego, L1, false, false, q1)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -471,13 +474,13 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 			else
-				for state1 in getKantaro(kantaro, L1, true, false, q1)
+				for state1 in getBasisLego(basisLego, L1, true, false, q1)
 					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
 				end
-				for state1 in getKantaro(kantaro, L1, false, true, q1)
+				for state1 in getBasisLego(basisLego, L1, false, true, q1)
 					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
 				end
-				# states = getKantaro(kantaro, L1, true, false, q1)
+				# states = getBasisLego(basisLego, L1, true, false, q1)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -485,7 +488,7 @@ function getExtendedKantaro(
 				# end
 				# append!(res, toAppend)
 				#
-				# states = getKantaro(kantaro, L1, false, true, q1)
+				# states = getBasisLego(basisLego, L1, false, true, q1)
 				# n = length(states)
 				# toAppend = zeros(Int64, n)
 				# Threads.@threads for i = 1 : n
@@ -499,10 +502,10 @@ function getExtendedKantaro(
 			tot = (s2 - 1) + q2 - (q1 + start)
 			if mod(tot, 3) == start
 				if iseven(L2)
-					for state1 in getKantaro(kantaro, L1, true, false, q1)
+					for state1 in getBasisLego(basisLego, L1, true, false, q1)
 						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
 					end
-					# states = getKantaro(kantaro, L1, true, false, q1)
+					# states = getBasisLego(basisLego, L1, true, false, q1)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -510,10 +513,10 @@ function getExtendedKantaro(
 					# end
 					# append!(res, toAppend)
 				else
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
 						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
 					end
-					# states = getKantaro(kantaro, L1, true, true, q1)
+					# states = getBasisLego(basisLego, L1, true, true, q1)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -528,10 +531,10 @@ function getExtendedKantaro(
 			tot = - (q2 + (s1 - 1) + (q1 + start))
 			if mod(tot, 3) == start
 				if iseven(L2)
-					for state1 in getKantaro(kantaro, L1, false, true, q1)
+					for state1 in getBasisLego(basisLego, L1, false, true, q1)
 						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
 					end
-					# states = getKantaro(kantaro, L1, false, true, q1)
+					# states = getBasisLego(basisLego, L1, false, true, q1)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -539,10 +542,10 @@ function getExtendedKantaro(
 					# end
 					# append!(res, toAppend)
 				else
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
 						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
 					end
-					# states = getKantaro(kantaro, L1, true, true, q1)
+					# states = getBasisLego(basisLego, L1, true, true, q1)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -557,10 +560,10 @@ function getExtendedKantaro(
 			for s2 = 1 : 3
 				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
 				if mod(tot, 3) == start && iseven(L2)
-					for state1 in getKantaro(kantaro, L1, true, true, q1)
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
 						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, s2 ))
 					end
-					# states = getKantaro(kantaro, L1, true, true, q1)
+					# states = getBasisLego(basisLego, L1, true, true, q1)
 					# n = length(states)
 					# toAppend = zeros(Int64, n)
 					# Threads.@threads for i = 1 : n
@@ -603,15 +606,15 @@ function getExtendedKantaro(
 end
 
 # basis of inds (not states)
-function getExtendedKantaro(
-	kantaro::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+function getExtendedBasis(
+	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	L::Int64,
 	below::Int64
 	)::Vector{Int64}
 
 	res = []
 	for start = 0 : 2
-		append!(res, getExtendedKantaro(kantaro, L, start, below))
+		append!(res, getExtendedBasis(basisLego, L, start, below))
 		if iseven(L)
 			append!(res, 1 + 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
 		end
@@ -791,21 +794,25 @@ end
 
 println("available number of threads: ", Threads.nthreads())
 println()
+flush(stdout)
 println("preparing...")
 Threads.@threads for preind = 1 : len
 	setFlag!(flag_,preind)
 	computeDiag!(diag_,flag_,preind)
 end
 println()
+flush(stdout)
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
+
+T = Union{Vector{Float32},Vector{Float16}}
 
 function sortAndAppendColumn!(
 	col::Vector{Int32},
 	row::Vector{Int32},
-	val::Vector{Float32},
+	val::T,
 	miniRow::Vector{Int64},
-	miniVal::Vector{Float32}
+	miniVal::T
 	)
 	perm = sortperm(miniRow)
 	miniRow = miniRow[perm]
@@ -925,24 +932,29 @@ end
 println("build H...")
 @time H=buildH(diag_,flag_)
 println()
+flush(stdout)
 
 println("computing eigenvalues...")
 println()
+flush(stdout)
 
-println("using Arpack:")
-@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-println(sort(real(e)))
-println()
-#
-# println("using ArnoldiMethod:")
-# @time e,v = eigs_ArnoldiMethod(H)
-# println(sort(e))
+# println("using Arpack:")
+# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+# println(sort(real(e)))
 # println()
+flush(stdout)
+#
+println("using ArnoldiMethod:")
+@time e,v = eigs_ArnoldiMethod(H)
+println(sort(e))
+println()
+flush(stdout)
 #
 # println("using KrylovKit:")
 # @time e,v = eigs_KrylovKit(H)
 # println(sort(e))
 # println()
+flush(stdout)
 
 #=
 
@@ -1015,7 +1027,7 @@ end
 function buildAttach()
 	col=Int32[]
 	row=Int32[]
-	val=Float32[]
+	val=Float16[]
 	for preind = 1 : len
 		ind = basis[preind]
 		state = stateFromInd(ind)
@@ -1100,14 +1112,14 @@ function zip!(C,B,i::Int64)
 end
 
 function buildZip(i::Int64)
-	res = sparse(Int32[],Int32[],Float32[],ziplen,ziplen)
+	res = sparse(Int32[],Int32[],Float16[],ziplen,ziplen)
 	col=Int32[]
 	row=Int32[]
-	val=Float32[]
+	val=Float16[]
 	ncol = 1
 	for preind = 1 : ziplen
 		miniRow = Int64[]
-		miniVal = Float32[]
+		miniVal = Float16[]
 		ind = inBasis[preind]
 		e1 = Int64(edgeAtDrapeMapping[preind])
 		state = stateFromInd(ind,L+2)
@@ -1134,12 +1146,12 @@ function buildZip(i::Int64)
 			append!(res.nzval, val)
 			col=Int32[]
 			row=Int32[]
-			val=Float32[]
+			val=Float16[]
 		end
 		append!(res.rowval, row)
 		append!(res.nzval, val)
 		row=Int32[]
-		val=Float32[]
+		val=Float16[]
 	end
 	return res
 end
@@ -1207,7 +1219,7 @@ end
 function buildDetach()
 	col=Int32[]
 	row=Int32[]
-	val=Float32[]
+	val=Float16[]
 	for preind = 1 : ziplen
 		ind = inBasis[preind]
 		state = stateFromInd(ind,L+2)
@@ -1292,7 +1304,7 @@ function prepare!(below::Int64)
 		global zipFromInd = fromInd
 	else
 		if below > 0
-			global outBasis = getExtendedKantaro(kantaro_, L, below+1)
+			global outBasis = getExtendedBasis(basisLego_, L, below+1)
 		end
 		global zipFromInd = Dict((outBasis[x],Int32(x)) for x in 1 : ziplen)
 	end
@@ -1306,11 +1318,12 @@ end
 
 println("prepare zipper...")
 inBasis = basis
-@time outBasis = getExtendedKantaro(kantaro_, L, 1)
+@time outBasis = getExtendedBasis(basisLego_, L, 1)
 ziplen = length(outBasis)
 zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
 edgeAtDrapeMapping = zeros(Int8,ziplen)
 println()
+flush(stdout)
 
 function ρMatrix(v)
 	u = copy(v)
@@ -1321,6 +1334,7 @@ function ρMatrix(v)
 		println("act attach...")
 		@time u = Matrix(ρ * u)
 		println()
+flush(stdout)
 		for i = 1 : L
 			println("prepare zip ", i, "...")
 			@time prepare!(i)
@@ -1328,6 +1342,7 @@ function ρMatrix(v)
 			println("act zip ", i, "...")
 			@time u = Matrix(ρ * u)
 			println()
+flush(stdout)
 		end
 		println("prepare detach...")
 		@time prepare!(L+1)
@@ -1335,6 +1350,7 @@ function ρMatrix(v)
 		println("act detach...")
 		@time u = Matrix(ρ * u)
 		println()
+flush(stdout)
 	else
 		println("prepare attach...")
 		@time prepare!(0)
@@ -1343,6 +1359,7 @@ function ρMatrix(v)
 		println("act attach...")
 		@time u = ρ * u
 		println()
+flush(stdout)
 		for i = 1 : L
 			println("prepare zip ", i, "...")
 			@time prepare!(i)
@@ -1351,6 +1368,7 @@ function ρMatrix(v)
 			println("act zip ", i, "...")
 			@time u = ρ * u
 			println()
+flush(stdout)
 		end
 		println("prepare detach...")
 		@time prepare!(L+1)
@@ -1359,6 +1377,7 @@ function ρMatrix(v)
 		println("act detach...")
 		@time u = ρ * u
 		println()
+flush(stdout)
 	end
 
 	return adjoint(v) * u
@@ -1429,6 +1448,7 @@ end
 function diagonalizeHTρ(e,v,T)
 	println("diagonalizing H,T,ρ...")
 	println()
+flush(stdout)
 
 	smallH = Matrix(diagm(e))
 	smallT = Matrix(adjoint(v)*T*v)
