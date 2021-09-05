@@ -6,11 +6,15 @@ using KrylovKit
 using BenchmarkTools
 using JLD2
 
-const L = 15
-const nev = 150
+const L = 6
+const nev = 5
+const dataPath = "data/"
+
+# const L = parse(Int64, ARGS[1])
+# const nev = parse(Int64, ARGS[2])
+# const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/"
+
 const buildSparse = true
-# const dataPath = "data/"
-const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/"
 
 if !ispath(dataPath)
 	mkdir(dataPath)
@@ -31,8 +35,16 @@ if !ispath(dataPathL * "prep/")
 	mkdir(dataPathL * "prep/")
 end
 
+if !ispath(dataPathL * "edge/")
+	mkdir(dataPathL * "edge/")
+end
+
 if !ispath(dataPathL * "zip/")
 	mkdir(dataPathL * "zip/")
+end
+
+if !ispath(dataPathL * "done/")
+	mkdir(dataPathL * "done/")
 end
 
 println()
@@ -223,7 +235,7 @@ else
 	@time const basis = [ x+1 for x in getBasisLego(basisLego_, L) ]
 	const len = length(basis)
 	@time const fromInd = Dict((basis[x],x) for x in 1:len)
-	@save basisPath basis len fromInd
+	@time @save basisPath basis len fromInd
 end
 println()
 flush(stdout)
@@ -845,7 +857,7 @@ else
 		setFlag!(flag_,preind)
 		computeDiag!(diag_,flag_,preind)
 	end
-	@save prepPath flag_ diag_
+	@time @save prepPath flag_ diag_
 end
 println()
 flush(stdout)
@@ -1008,7 +1020,11 @@ if !ispath(eigPath) || length(e) < nev
 	flush(stdout)
 	@time e,v = eigs_KrylovKit(H)
 	println(sort(e))
-	@save eigPath e v
+	@time @save eigPath e v
+end
+if length(e) > nev
+	e = e[1:nev]
+	v = v[:,1:nev]
 end
 println()
 flush(stdout)
@@ -1350,13 +1366,27 @@ end
 
 #####
 
+# edgeAtDrapeMapping = zeros(Int8, ziplen)
+
 function prepare!(below::Int64)
 	preparePath = dataPathL * "prep/prep_" * string(below) * ".jld2"
 	if ispath(preparePath)
-		println("load...")
-		@time @load preparePath inBasis outBasis zipFromInd
+		if below == 0
+			println("load prepare attach...")
+		elseif below == L+1
+			println("load prepare detach...")
+		else
+			println("load prepare zip " * string(below) * "...")
+		end
+		@load preparePath inBasis outBasis zipFromInd edgeAtDrapeMapping
 	else
-		println("compute...")
+		if below == 0
+			println("prepare attach...")
+		elseif below == L+1
+			println("prepare detach...")
+		else
+			println("prepare zip " * string(below) * "...")
+		end
 		if below == 0
 			global inBasis = basis
 		else
@@ -1371,149 +1401,132 @@ function prepare!(below::Int64)
 			end
 			global zipFromInd = Dict((outBasis[x],Int32(x)) for x in 1 : ziplen)
 		end
-		@save preparePath inBasis outBasis zipFromInd
-	end
-	# TODO
-	if 1 <= below <= L
-		for preind = 1 : ziplen
-			global edgeAtDrapeMapping
-			setEdgeAtDrapeMapping!(edgeAtDrapeMapping,below,preind)
+
+		global edgeAtDrapeMapping
+		if 1 <= below <= L
+			for preind = 1 : ziplen
+				setEdgeAtDrapeMapping!(edgeAtDrapeMapping,below,preind)
+			end
 		end
+
+		@save preparePath inBasis outBasis zipFromInd edgeAtDrapeMapping
 	end
 end
 
 const prepZipPath = dataPathL * "prepZip.jld2"
-println("prepare zipper...")
-flush(stdout)
 if ispath(prepZipPath)
-	println("load...")
+	println("load zipper...")
 	flush(stdout)
 	@time @load prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
 else
-	println("compute...")
+	println("prepare zipper...")
 	flush(stdout)
 	inBasis = basis
 	@time outBasis = getExtendedBasis(basisLego_, L, 1)
 	ziplen = length(outBasis)
 	zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
 	edgeAtDrapeMapping = zeros(Int8,ziplen)
-	println()
-	flush(stdout)
-	@save prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
+	@time @save prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
 end
+println()
+flush(stdout)
 
 function ρMatrix(v)
-	# u = copy(v)
 	if buildSparse
-		println("prepare attach...")
-		flush(stdout)
 		@time prepare!(0)
 
-		attachPath = dataPathL * "attach.jld2"
-		if ispath(attachPath)
-			println("load attach...")
-			flush(stdout)
-			@time @load attachPath ρ
-		else
-			println("build attach...")
-			flush(stdout)
-			@time ρ = buildAttach()
-			@save attachPath ρ
-		end
-
-		println("act attach...")
-		flush(stdout)
-		@time for s = 1 : length(e)
-			path = dataPathρV * "rhov_0_" * string(s) * ".jld2"
-			if !ispath(path)
-				rhov = ρ * v[:,s]
-				@save path rhov
-			end
-		end
-
-		# u = Matrix{Float16}(undef, ziplen, length(e))
-		# for s = 1 : length(e)
-		# 	path = dataPathρV * "rhov_0_" * string(s) * ".jld2"
-		# 	@time @load path rhov
-		# 	u[:,s] = rhov
-		# end
-		# # @time u = ρ * u
-		# println()
-		# flush(stdout)
-
-		for i = 1 : L
-			println("prepare zip ", i, "...")
-			flush(stdout)
-			@time prepare!(i)
-
-			zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
-			if ispath(zipPath)
-				println("load zip ", i, "...")
+		donePath = dataPathL * "done/done_" * string(0) * ".jld2"
+		if !ispath(donePath)
+			attachPath = dataPathL * "attach.jld2"
+			if ispath(attachPath)
+				println("load attach...")
 				flush(stdout)
-				@time @load zipPath ρ
+				@time @load attachPath ρ
 			else
-				println("build zip ", i, "...")
+				println("build attach...")
 				flush(stdout)
-				@time ρ = buildZip(i)
-				@save zipPath ρ
+				@time ρ = buildAttach()
+				@time @save attachPath ρ
 			end
 
-			println("act zip ", i, "...")
+			println("act attach...")
 			flush(stdout)
 			@time for s = 1 : length(e)
-				oldPath = dataPathρV * "rhov_" * string(i-1) * "_" * string(s) * ".jld2"
-				path = dataPathρV * "rhov_" * string(i) * "_" * string(s) * ".jld2"
+				path = dataPathρV * "rhov_0_" * string(s) * ".jld2"
 				if !ispath(path)
-					@time @load oldPath rhov
-					rhov = ρ * rhov
+					@time rhov = ρ * v[:,s]
 					@save path rhov
 				end
 			end
-			# @time u = ρ * u
+		end
+		@save donePath donePath
+		println()
+		flush(stdout)
+
+		for i = 1 : L
+			@time prepare!(i)
+
+			donePath = dataPathL * "done/done_" * string(i) * ".jld2"
+			if !ispath(donePath)
+				zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
+				if ispath(zipPath)
+					println("load zip ", i, "...")
+					flush(stdout)
+					@time @load zipPath ρ
+				else
+					println("build zip ", i, "...")
+					flush(stdout)
+					@time ρ = buildZip(i)
+					@time @save zipPath ρ
+				end
+
+				println("act zip ", i, "...")
+				flush(stdout)
+				@time Threads.@threads for s = 1 : length(e)
+					oldPath = dataPathρV * "rhov_" * string(i-1) * "_" * string(s) * ".jld2"
+					path = dataPathρV * "rhov_" * string(i) * "_" * string(s) * ".jld2"
+					if !ispath(path)
+						@load oldPath rhov
+						@time rhov = ρ * rhov
+						@save path rhov
+						flush(stdout)
+					end
+				end
+			end
+			@save donePath donePath
 			println()
 			flush(stdout)
 		end
 
-		# u = Matrix{Float16}(undef, ziplen, length(e))
-		# for s = 1 : length(e)
-		# 	path = dataPathρV * "rhov_" * string(L) * "_" * string(s) * ".jld2"
-		# 	@time @load path rhov
-		# 	u[:,s] = rhov
-		# end
-		# println()
-		# flush(stdout)
-
-		println("prepare detach...")
 		@time prepare!(L+1)
 
-		detachPath = dataPathL * "detach.jld2"
-		if ispath(detachPath)
-			println("load detach...")
-			flush(stdout)
-			@time @load detachPath ρ
-		else
-			println("build detach...")
-			flush(stdout)
-			@time ρ = buildDetach()
-			@save detachPath ρ
-		end
+		donePath = dataPathL * "done/done_" * string(L+1) * ".jld2"
+		if !ispath(donePath)
+			detachPath = dataPathL * "detach.jld2"
+			if ispath(detachPath)
+				println("load detach...")
+				flush(stdout)
+				@time @load detachPath ρ
+			else
+				println("build detach...")
+				flush(stdout)
+				@time ρ = buildDetach()
+				@time @save detachPath ρ
+			end
 
-		# println("act detach...")
-		# @time u = ρ * u
-		# println()
-		# flush(stdout)
-
-		println("act detach...")
-		flush(stdout)
-		@time for s = 1 : length(e)
-			oldPath = dataPathρV * "rhov_" * string(L) * "_" * string(s) * ".jld2"
-			path = dataPathρV * "rhov_" * string(L+1) * "_" * string(s) * ".jld2"
-			if !ispath(path)
-				@time @load oldPath rhov
-				rhov = ρ * rhov
-				@save path rhov
+			println("act detach...")
+			flush(stdout)
+			@time for s = 1 : length(e)
+				oldPath = dataPathρV * "rhov_" * string(L) * "_" * string(s) * ".jld2"
+				path = dataPathρV * "rhov_" * string(L+1) * "_" * string(s) * ".jld2"
+				if !ispath(path)
+					@load oldPath rhov
+					@time rhov = ρ * rhov
+					@save path rhov
+				end
 			end
 		end
+		@save donePath donePath
 
 		u = Matrix{Float16}(undef, len, length(e))
 		for s = 1 : length(e)
