@@ -4,10 +4,22 @@ using Arpack
 using ArnoldiMethod
 using KrylovKit
 using BenchmarkTools
+using JLD2
 
-const L = 15
-const nev = 100
+const L = 6
+const nev = 1
 const buildSparse = true
+const dataPath = "data/"
+
+if !ispath(dataPath)
+	mkdir(dataPath)
+end
+
+const dataPathL = dataPath * string(L) * "/"
+
+if !ispath(dataPathL)
+	mkdir(dataPathL)
+end
 
 println()
 flush(stdout)
@@ -186,12 +198,22 @@ function getBasisLego(basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
 	return res
 end
 
-println("computing basis...")
-@time const basis = [ x+1 for x in getBasisLego(basisLego_, L) ]
-const len = length(basis)
-@time const fromInd = Dict((basis[x],x) for x in 1:len)
+const basisPath = dataPathL * "basis.jld2"
+if ispath(basisPath)
+	println("load basis...")
+	flush(stdout)
+	@load basisPath basis len fromInd
+else
+	println("compute basis...")
+	flush(stdout)
+	@time const basis = [ x+1 for x in getBasisLego(basisLego_, L) ]
+	const len = length(basis)
+	@time const fromInd = Dict((basis[x],x) for x in 1:len)
+	@save basisPath basis len fromInd
+end
 println()
 flush(stdout)
+
 
 
 #=
@@ -795,24 +817,33 @@ end
 println("available number of threads: ", Threads.nthreads())
 println()
 flush(stdout)
-println("preparing...")
-Threads.@threads for preind = 1 : len
-	setFlag!(flag_,preind)
-	computeDiag!(diag_,flag_,preind)
+
+
+const prepPath = dataPathL * "prep.jld2"
+if ispath(prepPath)
+	println("load flag and diag...")
+	@load prepPath flag_ diag_
+else
+	println("compute flag and diag...")
+	Threads.@threads for preind = 1 : len
+		setFlag!(flag_,preind)
+		computeDiag!(diag_,flag_,preind)
+	end
+	@save prepPath flag_ diag_
 end
 println()
 flush(stdout)
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
-T = Union{Vector{Float32},Vector{Float16}}
+TT = Union{Vector{Float32},Vector{Float16}}
 
 function sortAndAppendColumn!(
 	col::Vector{Int32},
 	row::Vector{Int32},
-	val::T,
+	val::TT,
 	miniRow::Vector{Int64},
-	miniVal::T
+	miniVal::TT
 	)
 	perm = sortperm(miniRow)
 	miniRow = miniRow[perm]
@@ -929,32 +960,42 @@ function eigs_KrylovKit(H)
 	return val,mat
 end
 
-println("build H...")
-@time H=buildH(diag_,flag_)
-println()
-flush(stdout)
+const eigPath = dataPathL * "eig.jld2"
+if ispath(eigPath)
+	println("load eigen...")
+	@load eigPath e v
+else
+	println("build H...")
+	@time H=buildH(diag_,flag_)
+	println()
+	flush(stdout)
 
-println("computing eigenvalues...")
-println()
-flush(stdout)
+	println("compute eigen...")
+	println()
+	flush(stdout)
 
-# println("using Arpack:")
-# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-# println(sort(real(e)))
-# println()
-flush(stdout)
-#
-println("using ArnoldiMethod:")
-@time e,v = eigs_ArnoldiMethod(H)
-println(sort(e))
-println()
-flush(stdout)
-#
-# println("using KrylovKit:")
-# @time e,v = eigs_KrylovKit(H)
-# println(sort(e))
-# println()
-flush(stdout)
+	# println("using Arpack:")
+	# flush(stdout)
+	# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+	# println(sort(real(e)))
+	# println()
+	# flush(stdout)
+	#
+	# println("using ArnoldiMethod:")
+	# flush(stdout)
+	# @time e,v = eigs_ArnoldiMethod(H)
+	# println(sort(e))
+	# println()
+	# flush(stdout)
+	#
+	println("using KrylovKit:")
+	flush(stdout)
+	@time e,v = eigs_KrylovKit(H)
+	println(sort(e))
+	println()
+	flush(stdout)
+	@save eigPath e v
+end
 
 #=
 
@@ -1446,13 +1487,13 @@ function mathematicaMatrix(M)
 end
 
 function diagonalizeHTρ(e,v,T)
-	println("diagonalizing H,T,ρ...")
-	println()
-flush(stdout)
-
 	smallH = Matrix(diagm(e))
 	smallT = Matrix(adjoint(v)*T*v)
 	smallρ = ρMatrix(v)
+
+	println("diagonalizing H,T,ρ...")
+	println()
+	flush(stdout)
 	smalle,smallv = eigen(smallH+smallT+smallρ)
 
 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
