@@ -6,8 +6,8 @@ using KrylovKit
 using BenchmarkTools
 using JLD2
 
-const L = 6
-const nev = 1
+const L = 3
+const nev = 3
 const buildSparse = true
 const dataPath = "data/"
 
@@ -964,7 +964,9 @@ const eigPath = dataPathL * "eig.jld2"
 if ispath(eigPath)
 	println("load eigen...")
 	@load eigPath e v
-else
+end
+
+if !ispath(eigPath) || length(e) < nev
 	println("build H...")
 	@time H=buildH(diag_,flag_)
 	println()
@@ -978,24 +980,20 @@ else
 	# flush(stdout)
 	# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
 	# println(sort(real(e)))
-	# println()
-	# flush(stdout)
 	#
 	# println("using ArnoldiMethod:")
 	# flush(stdout)
 	# @time e,v = eigs_ArnoldiMethod(H)
 	# println(sort(e))
-	# println()
-	# flush(stdout)
 	#
 	println("using KrylovKit:")
 	flush(stdout)
 	@time e,v = eigs_KrylovKit(H)
 	println(sort(e))
-	println()
-	flush(stdout)
 	@save eigPath e v
 end
+println()
+flush(stdout)
 
 #=
 
@@ -1335,20 +1333,29 @@ end
 #####
 
 function prepare!(below::Int64)
-	if below == 0
-		global inBasis = basis
+	preparePath = dataPathL * "prep" * string(below) * ".jld2"
+	if ispath(preparePath)
+		println("load...")
+		@load preparePath inBasis outBasis zipFromInd
 	else
-		global inBasis = outBasis
-	end
-	if below == L+1
-		global outBasis = basis
-		global zipFromInd = fromInd
-	else
-		if below > 0
-			global outBasis = getExtendedBasis(basisLego_, L, below+1)
+		println("compute...")
+		if below == 0
+			global inBasis = basis
+		else
+			global inBasis = outBasis
 		end
-		global zipFromInd = Dict((outBasis[x],Int32(x)) for x in 1 : ziplen)
+		if below == L+1
+			global outBasis = basis
+			global zipFromInd = fromInd
+		else
+			if below > 0
+				global outBasis = getExtendedBasis(basisLego_, L, below+1)
+			end
+			global zipFromInd = Dict((outBasis[x],Int32(x)) for x in 1 : ziplen)
+		end
+		@save preparePath inBasis outBasis zipFromInd
 	end
+	# TODO
 	if 1 <= below <= L
 		for preind = 1 : ziplen
 			global edgeAtDrapeMapping
@@ -1357,50 +1364,35 @@ function prepare!(below::Int64)
 	end
 end
 
-println("prepare zipper...")
-inBasis = basis
-@time outBasis = getExtendedBasis(basisLego_, L, 1)
-ziplen = length(outBasis)
-zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
-edgeAtDrapeMapping = zeros(Int8,ziplen)
-println()
-flush(stdout)
+const prepZipPath = dataPathL * "prepZip.jld2"
+if ispath(prepZipPath)
+	@load prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
+else
+	println("prepare zipper...")
+	inBasis = basis
+	@time outBasis = getExtendedBasis(basisLego_, L, 1)
+	ziplen = length(outBasis)
+	zipFromInd = Dict{Int64,Int32}((outBasis[x],Int32(x)) for x in 1 : ziplen)
+	edgeAtDrapeMapping = zeros(Int8,ziplen)
+	println()
+	flush(stdout)
+	@save prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
+end
 
 function ρMatrix(v)
 	u = copy(v)
-	if !buildSparse
+	if buildSparse
 		println("prepare attach...")
 		@time prepare!(0)
-		ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
-		println("act attach...")
-		@time u = Matrix(ρ * u)
-		println()
-flush(stdout)
-		for i = 1 : L
-			println("prepare zip ", i, "...")
-			@time prepare!(i)
-			ρ = LinearMap((C,B)->zip!(C,B,i),ziplen,ziplen,ismutating=true,issymmetric=false,isposdef=false)
-			println("act zip ", i, "...")
-			@time u = Matrix(ρ * u)
-			println()
-flush(stdout)
-		end
-		println("prepare detach...")
-		@time prepare!(L+1)
-		ρ = LinearMap((C,B)->detach!(C,B),len,ziplen,ismutating=true,issymmetric=false,isposdef=false)
-		println("act detach...")
-		@time u = Matrix(ρ * u)
-		println()
-flush(stdout)
-	else
-		println("prepare attach...")
-		@time prepare!(0)
+
+		# attachPath = dataPathL * "attach.jld2"
 		println("build attach...")
 		@time ρ = buildAttach()
 		println("act attach...")
 		@time u = ρ * u
+
 		println()
-flush(stdout)
+		flush(stdout)
 		for i = 1 : L
 			println("prepare zip ", i, "...")
 			@time prepare!(i)
@@ -1409,7 +1401,7 @@ flush(stdout)
 			println("act zip ", i, "...")
 			@time u = ρ * u
 			println()
-flush(stdout)
+			flush(stdout)
 		end
 		println("prepare detach...")
 		@time prepare!(L+1)
@@ -1418,7 +1410,31 @@ flush(stdout)
 		println("act detach...")
 		@time u = ρ * u
 		println()
-flush(stdout)
+		flush(stdout)
+	else
+		println("prepare attach...")
+		@time prepare!(0)
+		ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
+		println("act attach...")
+		@time u = Matrix(ρ * u)
+		println()
+		flush(stdout)
+		for i = 1 : L
+			println("prepare zip ", i, "...")
+			@time prepare!(i)
+			ρ = LinearMap((C,B)->zip!(C,B,i),ziplen,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+			println("act zip ", i, "...")
+			@time u = Matrix(ρ * u)
+			println()
+			flush(stdout)
+		end
+		println("prepare detach...")
+		@time prepare!(L+1)
+		ρ = LinearMap((C,B)->detach!(C,B),len,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+		println("act detach...")
+		@time u = Matrix(ρ * u)
+		println()
+		flush(stdout)
 	end
 
 	return adjoint(v) * u
