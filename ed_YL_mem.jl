@@ -6,43 +6,42 @@ using KrylovKit
 using BenchmarkTools
 using JLD2
 
-# const L = 6
-# const nev = 5
-# const dataPath = "data/"
+const L = 6
+const nev = 5
+const dataPath = "data/"
 
-const L = parse(Int64, ARGS[1])
-const nev = parse(Int64, ARGS[2])
-const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/"
+# const L = parse(Int64, ARGS[1])
+# const nev = parse(Int64, ARGS[2])
+# const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
-const buildSparse = true
+const eigSolver = "KrylovKit" # "Arpack" "ArnoldiMethod"
+const onlyT = true # compute eigenstates of H and measure T but not ρ
+const buildSparse = true # measure ρ with sparse matrices and not LinearMap
 
+
+#=
+Save/load hard disk to reduce memory usage when measuring ρ.
+=#
+
+const dataPathL = dataPath * string(L) * "/"
 if !ispath(dataPath)
 	mkdir(dataPath)
 end
-
-const dataPathL = dataPath * string(L) * "/"
-const dataPathρV = dataPathL * "rhov/"
-
 if !ispath(dataPathL)
 	mkdir(dataPathL)
 end
-
-if !ispath(dataPathρV)
-	mkdir(dataPathρV)
+if !ispath(dataPathL * "rhov/")
+	mkdir(dataPathL * "rhov/")
 end
-
 if !ispath(dataPathL * "prep/")
 	mkdir(dataPathL * "prep/")
 end
-
 if !ispath(dataPathL * "edge/")
 	mkdir(dataPathL * "edge/")
 end
-
 if !ispath(dataPathL * "zip/")
 	mkdir(dataPathL * "zip/")
 end
-
 if !ispath(dataPathL * "done/")
 	mkdir(dataPathL * "done/")
 end
@@ -54,7 +53,6 @@ println()
 flush(stdout)
 
 #=
-
 NOTE To facilitate the code, I always specify the variable types for functions.
 
 The following types are used:
@@ -65,11 +63,9 @@ The following types are used:
 	Int64 for everything else, including variables exponential in L.
 		e.g. state, ind, flag, edgeState.
 		edgeState assigns one byte for each site, so Int128 needed if L>21.
-
 =#
 
 #=
-
 As Julia's array is 1-based, I use
 
 	"ind" = 1 ... 4^L
@@ -78,7 +74,6 @@ as the array index.
 
 "state" is what you obtain by encoding vertex labels using the following mapping,
 and takes the values 0 ...  4^L-1.
-
 =#
 
 # y, z, p, m are x, 0, +, - but with ρ draped below at that vertex
@@ -87,7 +82,6 @@ const revmapping=Dict(0=>'x', 1=>'0', 2=>'+', 3=>'-')
 const startMapping = Dict('0'=>0, '1'=>1, '2'=>2)
 
 #=
-
 The conversion between "ind" and "state" is basically done by considering modulo 4^L.
 
 When L is even, however, some additional care is needed,
@@ -108,7 +102,6 @@ TODO It is better to use different variable names to distinguish the two.
 NOTE I have also decided to change the relation between ind and state to
 	ind = state + 1
 so that it is less awkward incorporating the extra bits for start/draped.
-
 =#
 
 function stateFromString(s::String,L::Int64=L)
@@ -161,11 +154,8 @@ end
 
 
 #=
-
-Divide-and-conquer.
-
+Divide-and-conquer to construct basis.
 =#
-
 
 # key is (L, evenxs_left, evenxs_right, Z3 charge)
 # value is state (not ind)
@@ -241,439 +231,10 @@ println()
 flush(stdout)
 
 
-
 #=
-
-Divide and conquer for extended chain.
-
+Construct Hamiltonian.
 =#
 
-function extendedInd(
-	state1::Int64,
-	state2::Int64,
-	L1::Int64,
-	L2::Int64,
-	start::Int64,
-	below::Int64,
-	s1::Int64,
-	s2::Int64)
-
-	return 1 + state1 + (s1 << (2*L1)) + (state2 << (2*(L1+1))) + (s2 << (2*(L1+L2+1))) + (start << (2*(L1+L2+2))) + (below << (2*(L1+L2+3)))
-end
-
-# basis of inds (not states)
-function getExtendedBasis(
-	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
-	L::Int64,
-	start::Int64,
-	below::Int64
-	)::Vector{Int64}
-
-	L1 = below-1
-	L2 = L-L1
-	res = []
-
-	### L1 L2 both not all X ###
-	for q1 = 0 : 2
-		for q2 = 0 : 2
-			# below is s1 = s2 = X
-			tot = - (q2 - (q1 + start))
-			if mod(tot, 3) == start
-				for evenxs_left = false : true
-					for evenxs_right = false : true
-						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getBasisLego(basisLego, L2, !evenxs_right, !evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
-							end
-							# states = getBasisLego(basisLego, L2, !evenxs_right, !evenxs_left, q2)
-							# n = length(states)
-							# toAppend = zeros(Int64, n)
-							# Threads.@threads for i = 1 : n
-							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, 0 )
-							# end
-							# append!(res, toAppend)
-						end
-					end
-				end
-			end
-			# below is s1 = X, s2 ≂̸ X
-			for s2 = 1 : 3
-				tot = (s2 - 1) + q2 - (q1 + start)
-				if mod(tot, 3) == start
-					evenxs_left = true
-					for evenxs_right = false : true
-						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getBasisLego(basisLego, L2, !evenxs_right, evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
-							end
-							# states = getBasisLego(basisLego, L2, !evenxs_right, evenxs_left, q2)
-							# n = length(states)
-							# toAppend = zeros(Int64, n)
-							# Threads.@threads for i = 1 : n
-							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, 0, s2 )
-							# end
-							# append!(res, toAppend)
-						end
-					end
-				end
-			end
-			# below is s1 ≂̸ X, s2 = X
-			for s1 = 1 : 3
-				tot = - (q2 + (s1 - 1) + (q1 + start))
-				if mod(tot, 3) == start
-					evenxs_right = true
-					for evenxs_left = false : true
-						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getBasisLego(basisLego, L2, evenxs_right, !evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, 0 ))
-							end
-							# states = getBasisLego(basisLego, L2, evenxs_right, !evenxs_left, q2)
-							# n = length(states)
-							# toAppend = zeros(Int64, n)
-							# Threads.@threads for i = 1 : n
-							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, s1, 0 )
-							# end
-							# append!(res, toAppend)
-						end
-					end
-				end
-			end
-			# below is s1 ≂̸ X, s2 ≂̸ X
-			for s1 = 1 : 3
-				for s2 = 1 : 3
-					tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
-					if mod(tot, 3) == start
-						evenxs_left = true
-						evenxs_right = true
-						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
-							for state2 in getBasisLego(basisLego, L2, evenxs_right, evenxs_left, q2)
-								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, s2 ))
-							end
-							# states = getBasisLego(basisLego, L2, evenxs_right, evenxs_left, q2)
-							# n = length(states)
-							# toAppend = zeros(Int64, n)
-							# Threads.@threads for i = 1 : n
-							# 	toAppend[i] = extendedInd( state1, states[i], L1, L2, start, below, s1, s2 )
-							# end
-							# append!(res, toAppend)
-						end
-					end
-				end
-			end
-		end
-	end
-
-	### L1 is all X, L2 is not ###
-	q1 = 0
-	for q2 = 0 : 2
-		# below is s1 = s2 = X
-		tot = - (q2 - (q1 + start))
-		if mod(tot, 3) == start
-			if iseven(L1)
-				for state2 in getBasisLego(basisLego, L2, true, true, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
-				end
-				for state2 in getBasisLego(basisLego, L2, false, false, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
-				end
-				# states = getBasisLego(basisLego, L2, true, true, q2)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-				#
-				# states = getBasisLego(basisLego, L2, false, false, q2)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-			else
-				for state2 in getBasisLego(basisLego, L2, true, false, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
-				end
-				for state2 in getBasisLego(basisLego, L2, false, true, q2)
-					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
-				end
-				# states = getBasisLego(basisLego, L2, true, false, q2)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-				#
-				# states = getBasisLego(basisLego, L2, false, true, q2)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-			end
-		end
-		# below is s1 = X, s2 ≂̸ X
-		for s2 = 1 : 3
-			tot = (s2 - 1) + q2 - (q1 + start)
-			if mod(tot, 3) == start
-				if iseven(L1)
-					for state2 in getBasisLego(basisLego, L2, false, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
-					end
-					# states = getBasisLego(basisLego, L2, false, true, q2)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, s2 )
-					# end
-					# append!(res, toAppend)
-				else
-					for state2 in getBasisLego(basisLego, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
-					end
-					# states = getBasisLego(basisLego, L2, true, true, q2)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, 0, s2 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-		# below is s1 ≂̸ X, s2 = X
-		for s1 = 1 : 3
-			tot = - (q2 + (s1 - 1) + (q1 + start))
-			if mod(tot, 3) == start
-				if iseven(L1)
-					for state2 in getBasisLego(basisLego, L2, true, false, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
-					end
-					# states = getBasisLego(basisLego, L2, true, false, q2)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, 0 )
-					# end
-					# append!(res, toAppend)
-				else
-					for state2 in getBasisLego(basisLego, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
-					end
-					# states = getBasisLego(basisLego, L2, true, true, q2)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, 0 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-		# below is s1 ≂̸ X, s2 ≂̸ X
-		for s1 = 1 : 3
-			for s2 = 1 : 3
-				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
-				if mod(tot, 3) == start && iseven(L1)
-					for state2 in getBasisLego(basisLego, L2, true, true, q2)
-						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, s2 ))
-					end
-					# states = getBasisLego(basisLego, L2, true, true, q2)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( 0, states[i], L1, L2, start, below, s1, s2 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-	end
-
-	### L2 is all X, L1 is not ###
-	q2 = 0
-	for q1 = 0 : 2
-		# below is s1 = s2 = X
-		tot = - (q2 - (q1 + start))
-		if mod(tot, 3) == start
-			if iseven(L2)
-				for state1 in getBasisLego(basisLego, L1, true, true, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
-				end
-				for state1 in getBasisLego(basisLego, L1, false, false, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
-				end
-				# states = getBasisLego(basisLego, L1, true, true, q1)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-				#
-				# states = getBasisLego(basisLego, L1, false, false, q1)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-			else
-				for state1 in getBasisLego(basisLego, L1, true, false, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
-				end
-				for state1 in getBasisLego(basisLego, L1, false, true, q1)
-					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
-				end
-				# states = getBasisLego(basisLego, L1, true, false, q1)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-				#
-				# states = getBasisLego(basisLego, L1, false, true, q1)
-				# n = length(states)
-				# toAppend = zeros(Int64, n)
-				# Threads.@threads for i = 1 : n
-				# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, 0 )
-				# end
-				# append!(res, toAppend)
-			end
-		end
-		# below is s1 = X, s2 ≂̸ X
-		for s2 = 1 : 3
-			tot = (s2 - 1) + q2 - (q1 + start)
-			if mod(tot, 3) == start
-				if iseven(L2)
-					for state1 in getBasisLego(basisLego, L1, true, false, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
-					end
-					# states = getBasisLego(basisLego, L1, true, false, q1)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, s2 )
-					# end
-					# append!(res, toAppend)
-				else
-					for state1 in getBasisLego(basisLego, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
-					end
-					# states = getBasisLego(basisLego, L1, true, true, q1)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, 0, s2 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-		# below is s1 ≂̸ X, s2 = X
-		for s1 = 1 : 3
-			tot = - (q2 + (s1 - 1) + (q1 + start))
-			if mod(tot, 3) == start
-				if iseven(L2)
-					for state1 in getBasisLego(basisLego, L1, false, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
-					end
-					# states = getBasisLego(basisLego, L1, false, true, q1)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, 0 )
-					# end
-					# append!(res, toAppend)
-				else
-					for state1 in getBasisLego(basisLego, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
-					end
-					# states = getBasisLego(basisLego, L1, true, true, q1)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, 0 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-		# below is s1 ≂̸ X, s2 ≂̸ X
-		for s1 = 1 : 3
-			for s2 = 1 : 3
-				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
-				if mod(tot, 3) == start && iseven(L2)
-					for state1 in getBasisLego(basisLego, L1, true, true, q1)
-						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, s2 ))
-					end
-					# states = getBasisLego(basisLego, L1, true, true, q1)
-					# n = length(states)
-					# toAppend = zeros(Int64, n)
-					# Threads.@threads for i = 1 : n
-					# 	toAppend[i] = extendedInd( states[i], 0, L1, L2, start, below, s1, s2 )
-					# end
-					# append!(res, toAppend)
-				end
-			end
-		end
-	end
-
-	### both L1 and L2 are all X ###
-	if iseven(L1) && iseven(L2)
-		append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, 0 ))
-		for s1 = 1 : 3
-			s2 = 1 + mod(1-s1,3)
-			append!(res, extendedInd( 0, 0, L1, L2, start, below, s1, s2 ))
-		end
-	end
-	if isodd(L1) && isodd(L2)
-		append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, 0 ))
-	end
-	if (iseven(L1) && isodd(L2) || iseven(L2) && isodd(L1))
-		for s2 = 1 : 3
-			tot = (s2 - 1) - start
-			if mod(tot,3) == start
-				append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, s2 ))
-			end
-		end
-		for s1 = 1 : 3
-			tot = - ( (s1 - 1) + start )
-			if mod(tot,3) == start
-				append!(res, extendedInd( 0, 0, L1, L2, start, below, s1, 0 ))
-			end
-		end
-	end
-
-	sort!(res)
-	return res
-end
-
-# basis of inds (not states)
-function getExtendedBasis(
-	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
-	L::Int64,
-	below::Int64
-	)::Vector{Int64}
-
-	res = []
-	for start = 0 : 2
-		append!(res, getExtendedBasis(basisLego, L, start, below))
-		if iseven(L)
-			append!(res, 1 + 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
-		end
-	end
-	return res
-end
-
-#=
-TODO trailingXs is only used for inferring whether start label is type 1 or ρ.
-Might as well define a function that also checks whether state is 1 when L even.
-=#
 function trailingXs(state::Int64,L::Int64=L)
 	state = state & (4^L-1)
 	i=0
@@ -844,7 +405,6 @@ println("available number of threads: ", Threads.nthreads())
 println()
 flush(stdout)
 
-
 const prepPath = dataPathL * "prep/prep.jld2"
 if ispath(prepPath)
 	println("load flag and diag...")
@@ -970,6 +530,11 @@ function buildH(diag,flag)
 	return res
 end
 
+
+#=
+Diagonalize Hamiltonian.
+=#
+
 function eigs_ArnoldiMethod(H)
 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
 	e,v = ArnoldiMethod.partialeigen(decomp)
@@ -1006,21 +571,27 @@ if !ispath(eigPath) || length(e) < nev
 	println()
 	flush(stdout)
 
-	# println("using Arpack:")
-	# flush(stdout)
-	# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-	# println(sort(real(e)))
-	#
-	# println("using ArnoldiMethod:")
-	# flush(stdout)
-	# @time e,v = eigs_ArnoldiMethod(H)
-	# println(sort(e))
-	#
-	println("using KrylovKit:")
-	flush(stdout)
-	@time e,v = eigs_KrylovKit(H)
-	println(sort(e))
-	@time @save eigPath e v
+	if eigSolver == "Arpack"
+		println("using Arpack:")
+		flush(stdout)
+		@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+		println(sort(real(e)))
+	elseif eigSolver == "ArnoldiMethod"
+		println("using ArnoldiMethod:")
+		flush(stdout)
+		@time e,v = eigs_ArnoldiMethod(H)
+		println(sort(e))
+	elseif eigSolver == "KrylovKit"
+		println("using KrylovKit:")
+		flush(stdout)
+		@time e,v = eigs_KrylovKit(H)
+		println(sort(e))
+		@time @save eigPath e v
+	else
+		println("invalid eigensolver...bye")
+		flush(stdout)
+		exit()
+	end
 end
 if length(e) > nev
 	e = e[1:nev]
@@ -1029,10 +600,278 @@ end
 println()
 flush(stdout)
 
+
 #=
+Divide and conquer for extended chain.
+=#
 
+function extendedInd(
+	state1::Int64,
+	state2::Int64,
+	L1::Int64,
+	L2::Int64,
+	start::Int64,
+	below::Int64,
+	s1::Int64,
+	s2::Int64)
+
+	return 1 + state1 + (s1 << (2*L1)) + (state2 << (2*(L1+1))) + (s2 << (2*(L1+L2+1))) + (start << (2*(L1+L2+2))) + (below << (2*(L1+L2+3)))
+end
+
+# basis of inds (not states)
+function getExtendedBasis(
+	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+	L::Int64,
+	start::Int64,
+	below::Int64
+	)::Vector{Int64}
+
+	L1 = below-1
+	L2 = L-L1
+	res = []
+
+	### L1 L2 both not all X ###
+	for q1 = 0 : 2
+		for q2 = 0 : 2
+			# below is s1 = s2 = X
+			tot = - (q2 - (q1 + start))
+			if mod(tot, 3) == start
+				for evenxs_left = false : true
+					for evenxs_right = false : true
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, !evenxs_right, !evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, 0 ))
+							end
+						end
+					end
+				end
+			end
+			# below is s1 = X, s2 ≂̸ X
+			for s2 = 1 : 3
+				tot = (s2 - 1) + q2 - (q1 + start)
+				if mod(tot, 3) == start
+					evenxs_left = true
+					for evenxs_right = false : true
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, !evenxs_right, evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, 0, s2 ))
+							end
+						end
+					end
+				end
+			end
+			# below is s1 ≂̸ X, s2 = X
+			for s1 = 1 : 3
+				tot = - (q2 + (s1 - 1) + (q1 + start))
+				if mod(tot, 3) == start
+					evenxs_right = true
+					for evenxs_left = false : true
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, evenxs_right, !evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, 0 ))
+							end
+						end
+					end
+				end
+			end
+			# below is s1 ≂̸ X, s2 ≂̸ X
+			for s1 = 1 : 3
+				for s2 = 1 : 3
+					tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
+					if mod(tot, 3) == start
+						evenxs_left = true
+						evenxs_right = true
+						for state1 in getBasisLego(basisLego, L1, evenxs_left, evenxs_right, q1)
+							for state2 in getBasisLego(basisLego, L2, evenxs_right, evenxs_left, q2)
+								append!(res, extendedInd( state1, state2, L1, L2, start, below, s1, s2 ))
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	### L1 is all X, L2 is not ###
+	q1 = 0
+	for q2 = 0 : 2
+		# below is s1 = s2 = X
+		tot = - (q2 - (q1 + start))
+		if mod(tot, 3) == start
+			if iseven(L1)
+				for state2 in getBasisLego(basisLego, L2, true, true, q2)
+					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				end
+				for state2 in getBasisLego(basisLego, L2, false, false, q2)
+					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				end
+			else
+				for state2 in getBasisLego(basisLego, L2, true, false, q2)
+					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				end
+				for state2 in getBasisLego(basisLego, L2, false, true, q2)
+					append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, 0 ))
+				end
+			end
+		end
+		# below is s1 = X, s2 ≂̸ X
+		for s2 = 1 : 3
+			tot = (s2 - 1) + q2 - (q1 + start)
+			if mod(tot, 3) == start
+				if iseven(L1)
+					for state2 in getBasisLego(basisLego, L2, false, true, q2)
+						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					end
+				else
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
+						append!(res, extendedInd( 0, state2, L1, L2, start, below, 0, s2 ))
+					end
+				end
+			end
+		end
+		# below is s1 ≂̸ X, s2 = X
+		for s1 = 1 : 3
+			tot = - (q2 + (s1 - 1) + (q1 + start))
+			if mod(tot, 3) == start
+				if iseven(L1)
+					for state2 in getBasisLego(basisLego, L2, true, false, q2)
+						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					end
+				else
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
+						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, 0 ))
+					end
+				end
+			end
+		end
+		# below is s1 ≂̸ X, s2 ≂̸ X
+		for s1 = 1 : 3
+			for s2 = 1 : 3
+				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
+				if mod(tot, 3) == start && iseven(L1)
+					for state2 in getBasisLego(basisLego, L2, true, true, q2)
+						append!(res, extendedInd( 0, state2, L1, L2, start, below, s1, s2 ))
+					end
+				end
+			end
+		end
+	end
+
+	### L2 is all X, L1 is not ###
+	q2 = 0
+	for q1 = 0 : 2
+		# below is s1 = s2 = X
+		tot = - (q2 - (q1 + start))
+		if mod(tot, 3) == start
+			if iseven(L2)
+				for state1 in getBasisLego(basisLego, L1, true, true, q1)
+					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				end
+				for state1 in getBasisLego(basisLego, L1, false, false, q1)
+					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				end
+			else
+				for state1 in getBasisLego(basisLego, L1, true, false, q1)
+					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				end
+				for state1 in getBasisLego(basisLego, L1, false, true, q1)
+					append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, 0 ))
+				end
+			end
+		end
+		# below is s1 = X, s2 ≂̸ X
+		for s2 = 1 : 3
+			tot = (s2 - 1) + q2 - (q1 + start)
+			if mod(tot, 3) == start
+				if iseven(L2)
+					for state1 in getBasisLego(basisLego, L1, true, false, q1)
+						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					end
+				else
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
+						append!(res, extendedInd( state1, 0, L1, L2, start, below, 0, s2 ))
+					end
+				end
+			end
+		end
+		# below is s1 ≂̸ X, s2 = X
+		for s1 = 1 : 3
+			tot = - (q2 + (s1 - 1) + (q1 + start))
+			if mod(tot, 3) == start
+				if iseven(L2)
+					for state1 in getBasisLego(basisLego, L1, false, true, q1)
+						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					end
+				else
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
+						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, 0 ))
+					end
+				end
+			end
+		end
+		# below is s1 ≂̸ X, s2 ≂̸ X
+		for s1 = 1 : 3
+			for s2 = 1 : 3
+				tot = (s2 - 1) + (q2 + (s1 - 1) + (q1 + start))
+				if mod(tot, 3) == start && iseven(L2)
+					for state1 in getBasisLego(basisLego, L1, true, true, q1)
+						append!(res, extendedInd( state1, 0, L1, L2, start, below, s1, s2 ))
+					end
+				end
+			end
+		end
+	end
+
+	### both L1 and L2 are all X ###
+	if iseven(L1) && iseven(L2)
+		append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, 0 ))
+		for s1 = 1 : 3
+			s2 = 1 + mod(1-s1,3)
+			append!(res, extendedInd( 0, 0, L1, L2, start, below, s1, s2 ))
+		end
+	end
+	if isodd(L1) && isodd(L2)
+		append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, 0 ))
+	end
+	if (iseven(L1) && isodd(L2) || iseven(L2) && isodd(L1))
+		for s2 = 1 : 3
+			tot = (s2 - 1) - start
+			if mod(tot,3) == start
+				append!(res, extendedInd( 0, 0, L1, L2, start, below, 0, s2 ))
+			end
+		end
+		for s1 = 1 : 3
+			tot = - ( (s1 - 1) + start )
+			if mod(tot,3) == start
+				append!(res, extendedInd( 0, 0, L1, L2, start, below, s1, 0 ))
+			end
+		end
+	end
+
+	sort!(res)
+	return res
+end
+
+# basis of inds (not states)
+function getExtendedBasis(
+	basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}},
+	L::Int64,
+	below::Int64
+	)::Vector{Int64}
+
+	res = []
+	for start = 0 : 2
+		append!(res, getExtendedBasis(basisLego, L, start, below))
+		if iseven(L)
+			append!(res, 1 + 1 + (start << (2*(L+2))) + (below << (2*(L+3))))
+		end
+	end
+	return res
+end
+
+
+#=
 F-symbol stuff.
-
 =#
 
 const fSymbolMapping_ = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.3027756377319946, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5502505227003375, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5351837584879964, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5542656654188897, 0.0, 0.0, 0.7675918792439983, 0.0, 0.0, 0.0, 0.0, 0.0, -0.3218575446628878]
@@ -1044,9 +883,7 @@ end
 
 
 #=
-
-Zipper stuff.
-
+Construct zipper.
 =#
 
 function attachInd(ind::Int64,sp::Tuple{Int64,Int64},start::Int64,L::Int64=L+2)
@@ -1081,7 +918,7 @@ function attach!(C,B)
 			continue
 		end
 		state = stateFromInd(ind)
-		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
+		if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
 			ni = attachPreind(ind,sXX,0,L+2)
 			C[ni] += B[preind]
 		else
@@ -1104,7 +941,7 @@ function buildAttach()
 	for preind = 1 : len
 		ind = basis[preind]
 		state = stateFromInd(ind)
-		if (isodd(trailingXs(state)) || (iseven(L) && ind==2)) # start label is 1
+		if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
 			ni = attachPreind(ind,sXX,0,L+2)
 			append!(col,[preind])
 			append!(row,[ni])
@@ -1229,33 +1066,6 @@ function buildZip(i::Int64)
 	return res
 end
 
-# function buildZip(i::Int64)
-# 	col=Int64[]
-# 	row=Int64[]
-# 	val=Float64[]
-# 	for preind = 1 : ziplen
-# 		ind = inBasis[preind]
-# 		e1 = Int64(edgeAtDrapeMapping[preind])
-# 		state = stateFromInd(ind,L+2)
-# 		s1,s2 = localStatePair(state,i,L+2)
-# 		for s3 = 0 : 3
-# 			for s4 = 0 : 3
-# 				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-# 					continue
-# 				end
-# 				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
-# 				append!(col,[preind])
-# 				append!(row,[ni])
-# 				append!(val,[FSymbolZipper(e1,s1,s2,s3,s4)])
-# 			end
-# 		end
-# 	end
-# 	append!(col,[ziplen])
-# 	append!(row,[ziplen])
-# 	append!(val,[0])
-# 	return sparse(row,col,val)
-# end
-
 function detach!(C,B)
 	Threads.@threads for preind = 1 : len
 		C[preind] = 0
@@ -1275,7 +1085,7 @@ function detach!(C,B)
 		end
 		ni = fromInd[ni]
 		sp = localStatePair(state,L+1,L+2)
-		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2)
 			if sp==sXX
 				C[ni] += ζ * B[preind]
 			end
@@ -1305,7 +1115,7 @@ function buildDetach()
 		end
 		ni = fromInd[ni]
 		sp = localStatePair(state,L+1,L+2)
-		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2)
 			if sp==sXX
 				append!(col,[preind])
 				append!(row,[ni])
@@ -1328,9 +1138,6 @@ function buildDetach()
 	append!(val,[0])
 	return sparse(row,col,val)
 end
-
-#####
-
 
 #=
 The zipper needs to know the edge label (1,a,b,ρ,aρ,a^2ρ) = (1,2,3,4,5,6)
@@ -1364,10 +1171,12 @@ function setEdgeAtDrapeMapping!(edgeAtDrapeMapping,below::Int64,preind::Int64)
 	end
 end
 
-#####
 
-# edgeAtDrapeMapping = zeros(Int8, ziplen)
+#=
+Act zipper.
+=#
 
+# Compute extended basis etc to prepare for one step of zipper.
 function prepare!(below::Int64)
 	preparePath = dataPathL * "prep/prep_" * string(below) * ".jld2"
 	if ispath(preparePath)
@@ -1455,7 +1264,7 @@ function ρMatrix(v)
 			@time for s = 1 : length(e)
 				println(s)
 				flush(stdout)
-				path = dataPathρV * "rhov_0_" * string(s) * ".jld2"
+				path = dataPathL * "rhov/rhov_0_" * string(s) * ".jld2"
 				# hasError = true
 				# try
 				# 	@load path rhov
@@ -1507,8 +1316,8 @@ function ρMatrix(v)
 				@time for s = 1 : length(e)
 					println(s)
 					flush(stdout)
-					oldPath = dataPathρV * "rhov_" * string(i-1) * "_" * string(s) * ".jld2"
-					path = dataPathρV * "rhov_" * string(i) * "_" * string(s) * ".jld2"
+					oldPath = dataPathL * "rhov/rhov_" * string(i-1) * "_" * string(s) * ".jld2"
+					path = dataPathL * "rhov/rhov_" * string(i) * "_" * string(s) * ".jld2"
 					# hasError = true
 					# try
 					# 	@load path rhov
@@ -1559,8 +1368,8 @@ function ρMatrix(v)
 			@time for s = 1 : length(e)
 				println(s)
 				flush(stdout)
-				oldPath = dataPathρV * "rhov_" * string(L) * "_" * string(s) * ".jld2"
-				path = dataPathρV * "rhov_" * string(L+1) * "_" * string(s) * ".jld2"
+				oldPath = dataPathL * "rhov/rhov_" * string(L) * "_" * string(s) * ".jld2"
+				path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(s) * ".jld2"
 				# hasError = true
 				# try
 				# 	@load path rhov
@@ -1588,7 +1397,7 @@ function ρMatrix(v)
 
 		u = Matrix{Float16}(undef, len, length(e))
 		for s = 1 : length(e)
-			path = dataPathρV * "rhov_" * string(L+1) * "_" * string(s) * ".jld2"
+			path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(s) * ".jld2"
 			@time @load path rhov
 			u[:,s] = rhov
 		end
@@ -1625,9 +1434,7 @@ end
 
 
 #=
-
 Translation (lattice shift).
-
 =#
 
 function Tind(ind::Int64,L::Int64,right::Bool)
@@ -1656,9 +1463,7 @@ T=LinearMap((C,B)->Tfunc!(C,B),len,ismutating=true,issymmetric=false,isposdef=fa
 
 
 #=
-
 Simultaneous diagonalization and output.
-
 =#
 
 # Print as mathematica array to reuse Mathematica code for making plots.
@@ -1685,14 +1490,33 @@ function mathematicaMatrix(M)
 	return s
 end
 
-function diagonalizeHTρ(e,v,T)
-	smallH = Matrix(diagm(e))
-	smallρ = ρMatrix(v)
-	smallT = Matrix(adjoint(v)*T*v)
+function diagonalizeHT(e,v,T)
+	println("diagonalizing H,T...")
+	println()
+	flush(stdout)
 
+	smallH = Matrix(diagm(e))
+	smallT = Matrix(adjoint(v)*T*v)
+	smalle,smallv = eigen(smallH+smallT)
+
+	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Ts = complex(diag(adjoint(smallv)*smallT*smallv))
+	Ps = real(map(log,Ts)/(2*π*im))*L
+	HPs = hcat(Hs,Ps)
+	HPs = sort([HPs[i,:] for i in 1:size(HPs, 1)])
+	s=""
+	s*=string(HPs[1][1])
+	println(mathematicaMatrix(HPs))
+end
+
+function diagonalizeHTρ(e,v,T)
 	println("diagonalizing H,T,ρ...")
 	println()
 	flush(stdout)
+
+	smallH = Matrix(diagm(e))
+	smallρ = ρMatrix(v)
+	smallT = Matrix(adjoint(v)*T*v)
 	smalle,smallv = eigen(smallH+smallT+smallρ)
 
 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
@@ -1703,7 +1527,11 @@ function diagonalizeHTρ(e,v,T)
 	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
 	s=""
 	s*=string(HPρs[1][1])
-	print(mathematicaMatrix(HPρs))
+	println(mathematicaMatrix(HPρs))
 end
 
-@time diagonalizeHTρ(e,v,T)
+if onlyT
+	@time diagonalizeHT(e,v,T)
+else
+	@time diagonalizeHTρ(e,v,T)
+end
