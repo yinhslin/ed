@@ -6,8 +6,8 @@ using KrylovKit
 using BenchmarkTools
 using JLD2
 
-const L = 6
-const nev = 5
+const L = 18
+const nev = 1
 const dataPath = "data/"
 
 # const L = parse(Int64, ARGS[1])
@@ -15,7 +15,7 @@ const dataPath = "data/"
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "KrylovKit" # "Arpack" "ArnoldiMethod"
-const onlyT = true # compute eigenstates of H and measure T but not ρ
+const onlyT = false # compute eigenstates of H and measure T but not ρ
 const buildSparse = true # measure ρ with sparse matrices and not LinearMap
 
 
@@ -1260,41 +1260,22 @@ function ρMatrix(v)
 
 			println("act attach...")
 			flush(stdout)
-			# @time Threads.@threads for s = 1 : length(e)
 			@time for s = 1 : length(e)
 				println(s)
 				flush(stdout)
 				path = dataPathL * "rhov/rhov_0_" * string(s) * ".jld2"
-				# hasError = true
-				# try
-				# 	@load path rhov
-				# 	hasError = false
-				# catch
-				# 	rm(path)
-				# end
-				# while hasError
 				if !ispath(path)
 					@time rhov = ρ * v[:,s]
 					@save path rhov
 					flush(stdout)
 				end
-				# 	try
-				# 		@load path rhov
-				# 		hasError = false
-				# 	catch
-				# 		hasError = true
-				# 	end
-				# end
 			end
 		end
 		@save donePath donePath
 		println()
 		flush(stdout)
 
-		# i = 1
-		# while i <= L
 		for i = 1 : L
-			# hasError = false
 			@time prepare!(i)
 			donePath = dataPathL * "done/done_" * string(i) * ".jld2"
 			if !ispath(donePath)
@@ -1312,33 +1293,17 @@ function ρMatrix(v)
 
 				println("act zip ", i, "...")
 				flush(stdout)
-				# @time Threads.@threads for s = 1 : length(e)
 				@time for s = 1 : length(e)
 					println(s)
 					flush(stdout)
 					oldPath = dataPathL * "rhov/rhov_" * string(i-1) * "_" * string(s) * ".jld2"
 					path = dataPathL * "rhov/rhov_" * string(i) * "_" * string(s) * ".jld2"
-					# hasError = true
-					# try
-					# 	@load path rhov
-					# 	hasError = false
-					# catch
-					# 	rm(path)
-					# end
-					# while hasError
 					if !ispath(path)
 						@load oldPath rhov
 						@time rhov = ρ * rhov
 						@save path rhov
 						flush(stdout)
 					end
-					# 	try
-					# 		@load path rhov
-					# 		hasError = false
-					# 	catch
-					# 		rm(path)
-					# 	end
-					# end
 				end
 			end
 			@save donePath donePath
@@ -1364,33 +1329,17 @@ function ρMatrix(v)
 
 			println("act detach...")
 			flush(stdout)
-			# @time Threads.@threads for s = 1 : length(e)
 			@time for s = 1 : length(e)
 				println(s)
 				flush(stdout)
 				oldPath = dataPathL * "rhov/rhov_" * string(L) * "_" * string(s) * ".jld2"
 				path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(s) * ".jld2"
-				# hasError = true
-				# try
-				# 	@load path rhov
-				# 	hasError = false
-				# catch
-				# 	rm(path)
-				# end
-				# while hasError
 				if !ispath(path)
 					@load oldPath rhov
 					@time rhov = ρ * rhov
 					@save path rhov
 					flush(stdout)
 				end
-				# 	try
-				# 		@load path rhov
-				# 		hasError = false
-				# 	catch
-				# 		rm(path)
-				# 	end
-				# end
 			end
 		end
 		@save donePath donePath
