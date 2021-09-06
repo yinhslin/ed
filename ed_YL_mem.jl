@@ -6,13 +6,13 @@ using KrylovKit
 using BenchmarkTools
 using JLD2
 
-const L = 6
-const nev = 5
-const dataPath = "data/"
+# const L = 6
+# const nev = 5
+# const dataPath = "data/"
 
-# const L = parse(Int64, ARGS[1])
-# const nev = parse(Int64, ARGS[2])
-# const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/"
+const L = parse(Int64, ARGS[1])
+const nev = parse(Int64, ARGS[2])
+const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/"
 
 const buildSparse = true
 
@@ -1451,21 +1451,42 @@ function ρMatrix(v)
 
 			println("act attach...")
 			flush(stdout)
+			# @time Threads.@threads for s = 1 : length(e)
 			@time for s = 1 : length(e)
+				println(s)
+				flush(stdout)
 				path = dataPathρV * "rhov_0_" * string(s) * ".jld2"
+				# hasError = true
+				# try
+				# 	@load path rhov
+				# 	hasError = false
+				# catch
+				# 	rm(path)
+				# end
+				# while hasError
 				if !ispath(path)
 					@time rhov = ρ * v[:,s]
 					@save path rhov
+					flush(stdout)
 				end
+				# 	try
+				# 		@load path rhov
+				# 		hasError = false
+				# 	catch
+				# 		hasError = true
+				# 	end
+				# end
 			end
 		end
 		@save donePath donePath
 		println()
 		flush(stdout)
 
+		# i = 1
+		# while i <= L
 		for i = 1 : L
+			# hasError = false
 			@time prepare!(i)
-
 			donePath = dataPathL * "done/done_" * string(i) * ".jld2"
 			if !ispath(donePath)
 				zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
@@ -1482,15 +1503,33 @@ function ρMatrix(v)
 
 				println("act zip ", i, "...")
 				flush(stdout)
-				@time Threads.@threads for s = 1 : length(e)
+				# @time Threads.@threads for s = 1 : length(e)
+				@time for s = 1 : length(e)
+					println(s)
+					flush(stdout)
 					oldPath = dataPathρV * "rhov_" * string(i-1) * "_" * string(s) * ".jld2"
 					path = dataPathρV * "rhov_" * string(i) * "_" * string(s) * ".jld2"
+					# hasError = true
+					# try
+					# 	@load path rhov
+					# 	hasError = false
+					# catch
+					# 	rm(path)
+					# end
+					# while hasError
 					if !ispath(path)
 						@load oldPath rhov
 						@time rhov = ρ * rhov
 						@save path rhov
 						flush(stdout)
 					end
+					# 	try
+					# 		@load path rhov
+					# 		hasError = false
+					# 	catch
+					# 		rm(path)
+					# 	end
+					# end
 				end
 			end
 			@save donePath donePath
@@ -1516,14 +1555,33 @@ function ρMatrix(v)
 
 			println("act detach...")
 			flush(stdout)
+			# @time Threads.@threads for s = 1 : length(e)
 			@time for s = 1 : length(e)
+				println(s)
+				flush(stdout)
 				oldPath = dataPathρV * "rhov_" * string(L) * "_" * string(s) * ".jld2"
 				path = dataPathρV * "rhov_" * string(L+1) * "_" * string(s) * ".jld2"
+				# hasError = true
+				# try
+				# 	@load path rhov
+				# 	hasError = false
+				# catch
+				# 	rm(path)
+				# end
+				# while hasError
 				if !ispath(path)
 					@load oldPath rhov
 					@time rhov = ρ * rhov
 					@save path rhov
+					flush(stdout)
 				end
+				# 	try
+				# 		@load path rhov
+				# 		hasError = false
+				# 	catch
+				# 		rm(path)
+				# 	end
+				# end
 			end
 		end
 		@save donePath donePath
@@ -1629,8 +1687,8 @@ end
 
 function diagonalizeHTρ(e,v,T)
 	smallH = Matrix(diagm(e))
-	smallT = Matrix(adjoint(v)*T*v)
 	smallρ = ρMatrix(v)
+	smallT = Matrix(adjoint(v)*T*v)
 
 	println("diagonalizing H,T,ρ...")
 	println()
