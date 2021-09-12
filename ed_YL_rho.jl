@@ -9,14 +9,14 @@ using JLD2
 const MyInt = Int64
 const MyFloat = Float32
 
-const L = 6
-const nev = 1
-const dataPath = "data/"
+# const L = 9
+# const nev = 1
+# const dataPath = "data/"
 # const dataPath = "/lustre/work/yinghsuan.lin/ed/data/" # NOTE If on cluster set to scratch space
 
-# const L = parse(Int64, ARGS[1])
-# const nev = parse(Int64, ARGS[2])
-# const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
+const L = parse(Int64, ARGS[1])
+const nev = parse(Int64, ARGS[2])
+const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
 const onlyT = true # compute eigenstates of H and measure T but not ρ
@@ -963,24 +963,30 @@ function attach!(C,B)
 	Threads.@threads for preind = 1 : zipLen[1]
 		C[preind] = 0
 	end
-	for preind = 1 : len
-		ind = basis[preind]
-		if B[preind] == 0
-			continue
-		end
-		state = stateFromInd(ind)
-		if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
-			ni = attachPreind(ind,sXX,0,L+2)
-			C[ni] += B[preind]
-		else
-			ni = attachPreind(ind,sXX,0,L+2)
-			C[ni] += 1/ζ * B[preind]
-			ni = attachPreind(ind,s00,0,L+2)
-			C[ni] += ξ * B[preind]
-			ni = attachPreind(ind,sPM,1,L+2)
-			C[ni] += ξ * B[preind]
-			ni = attachPreind(ind,sMP,2,L+2)
-			C[ni] += ξ * B[preind]
+	batchsize = Int64(ceil(len / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > len
+				continue
+			end
+			ind = basis[preind]
+			if B[preind] == 0
+				continue
+			end
+			state = stateFromInd(ind)
+			if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
+				ni = attachPreind(ind,sXX,0,L+2)
+				C[ni] += B[preind]
+			else
+				ni = attachPreind(ind,sXX,0,L+2)
+				C[ni] += 1/ζ * B[preind]
+				ni = attachPreind(ind,s00,0,L+2)
+				C[ni] += ξ * B[preind]
+				ni = attachPreind(ind,sPM,1,L+2)
+				C[ni] += ξ * B[preind]
+				ni = attachPreind(ind,sMP,2,L+2)
+				C[ni] += ξ * B[preind]
+			end
 		end
 	end
 end
@@ -1015,21 +1021,27 @@ function zip!(C,B,i::Int64)
 	Threads.@threads for preind = 1 : zipLen[i+1]
 		C[preind] = 0
 	end
-	for preind = 1 : zipLen[i]
-		ind = zipBases[i][preind]
-		if B[preind] == 0
-			continue
-		end
-		e1 = Int64(edgeAtDrapeMappings_[i][preind])
-		state = stateFromInd(ind,L+2)
-		s1,s2 = localStatePair(state,i,L+2)
-		for s3 = 0 : 3
-			for s4 = 0 : 3
-				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-					continue
+	batchsize = Int64(ceil(zipLen[i] / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > zipLen[i]
+				continue
+			end
+			ind = zipBases[i][preind]
+			if B[preind] == 0
+				continue
+			end
+			e1 = Int64(edgeAtDrapeMappings_[i][preind])
+			state = stateFromInd(ind,L+2)
+			s1,s2 = localStatePair(state,i,L+2)
+			for s3 = 0 : 3
+				for s4 = 0 : 3
+					if FSymbolZipper(e1,s1,s2,s3,s4)==0
+						continue
+					end
+					ni = zipPreInd(i+1,ind,(s3,s4),L+2)
+					C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 				end
-				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
-				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 			end
 		end
 	end
@@ -1039,30 +1051,36 @@ function detach!(C,B)
 	Threads.@threads for preind = 1 : len
 		C[preind] = 0
 	end
-	for preind = 1 : zipLen[L+1]
-		ind = zipBases[L+1][preind]
-		if B[preind] == 0
-			continue
-		end
-		state = stateFromInd(ind,L+2)
-		ni = 1+(state&(4^L-1))
-		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
-			ni=2
-		end
-		if !haskey(fromInd, ni)
-			continue
-		end
-		ni = fromInd[ni]
-		sp = localStatePair(state,L+1,L+2)
-		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
-			if sp==sXX
-				C[ni] += ζ * B[preind]
+	batchsize = Int64(ceil(zipLen[L+1] / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > zipLen[L+1]
+				continue
 			end
-		else
-			if sp==sXX
-				C[ni] += B[preind]
-			elseif sp==s00 || sp==sPM || sp==sMP
-				C[ni] += √ζ * B[preind]
+			ind = zipBases[L+1][preind]
+			if B[preind] == 0
+				continue
+			end
+			state = stateFromInd(ind,L+2)
+			ni = 1+(state&(4^L-1))
+			if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
+				ni=2
+			end
+			if !haskey(fromInd, ni)
+				continue
+			end
+			ni = fromInd[ni]
+			sp = localStatePair(state,L+1,L+2)
+			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2) # start label is 1
+				if sp==sXX
+					C[ni] += ζ * B[preind]
+				end
+			else
+				if sp==sXX
+					C[ni] += B[preind]
+				elseif sp==s00 || sp==sPM || sp==sMP
+					C[ni] += √ζ * B[preind]
+				end
 			end
 		end
 	end
@@ -1109,7 +1127,7 @@ println("precompute fusion space bases for zipper...")
 zipBases = fill([], L+1)
 zipLen = fill(0, L+1)
 zipFromInd = fill(Dict(), L+1)
-for i = 1 : L+1
+Threads.@threads for i = 1 : L+1
 	println(i,"/",L+1)
 	@time zipBases[i] = getExtendedBasis(basisLego_, L, i)
 	zipLen[i] = length(zipBases[i])
