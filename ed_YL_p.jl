@@ -9,12 +9,14 @@ using JLD2
 const MyInt = Int64
 const MyFloat = Float32
 
-const L = 6
-const nev = 8
+const L = 5
+const P = 1
+const nev = 10
 const dataPath = "data/"
 
 # const L = parse(Int64, ARGS[1])
-# const nev = parse(Int64, ARGS[2])
+# const P = parse(Int64, ARGS[2])
+# const nev = parse(Int64, ARGS[3])
 # const dataPath = "/lustre/work/yinghsuan.lin/ed/data/" # NOTE If on cluster set to scratch space
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
@@ -33,6 +35,9 @@ if !ispath(dataPath)
 end
 if !ispath(dataPathL)
 	mkdir(dataPathL)
+end
+if !ispath(dataPathL * "H/")
+	mkdir(dataPathL * "H/")
 end
 if !ispath(dataPathL * "rhov/")
 	mkdir(dataPathL * "rhov/")
@@ -295,9 +300,9 @@ pBasis = []
 BuildPBasis(pBasis)
 pLen = length(pBasis)
 
-for orbit in pBasis
-	println( [stringFromState(x-1,L) for x in orbit] )
-end
+# for orbit in pBasis
+# 	println( [stringFromState(x-1,L) for x in orbit] )
+# end
 
 
 #=
@@ -489,7 +494,9 @@ flush(stdout)
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
-TT = Union{Vector{MyFloat},Vector{Float16}}
+TT = Union{Vector{MyFloat},Vector{Float16},Vector{ComplexF64}}
+
+stripT(::Type{Vector{T}}) where {T} = T
 
 function sortAndAppendColumn!(
 	col::Vector{MyInt},
@@ -498,13 +505,14 @@ function sortAndAppendColumn!(
 	miniRow::Vector{Int64},
 	miniVal::TT
 	)
+	valType = stripT(typeof(val))
 	perm = sortperm(miniRow)
 	miniRow = miniRow[perm]
 	miniVal = miniVal[perm]
 	newMiniRow = MyInt[]
-	newMinival = MyFloat[]
+	newMinival = valType[]
 	oldr = 0
-	v = 0
+	v = valType(0)
 	cnt = 0
 	for r in miniRow
 		cnt += 1
@@ -664,99 +672,112 @@ function Hfunc!(C,B,diag::Vector{MyFloat},flag::Vector{MyInt})
 end
 
 function buildFixPBasis(p::Int64)
-	res = sparse(MyInt[],MyInt[],ComplexF64[],plen,len)
 	col=MyInt[]
 	row=MyInt[]
 	val=ComplexF64[]
-	ncol = 1
 	for pInd = 1 : pLen
 		orbit = pBasis[pInd]
 		oLen = length(orbit)
-
+		if mod(p * oLen, L) != 0
+			continue
+		end
+		cnt = 0
 		for ind in orbit
-
+			preind = fromInd[ind]
+			factor = exp(2 * π * im * p / L) / sqrt(oLen)
+			append!(col, [pInd])
+			append!(row, [preind])
+			append!(val, [factor])
+			cnt += 1
 		end
-		
-		for i = 1 : L
-			sp=localStatePair(state,i)
-			if sp==sXX  && isρ1ρ(flag,preind,i)
-				append!(miniRow,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
-				append!(miniVal,-ξ .* [y1,y2,x])
-			elseif sp==sPM
-				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sMP,s00]))
-				append!(miniVal,-y1 .* [ξ,y2,x])
-			elseif sp==sMP
-				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sPM,s00]))
-				append!(miniVal,-y2 .* [ξ,y1,x])
-			elseif sp==s00
-				append!(miniRow,map(s->newPreind(state,i,s),[sXX,sPM,sMP]))
-				append!(miniVal,-x .* [ξ,y1,y2])
-			elseif sp==s0P
-				append!(miniRow,map(s->newPreind(state,i,s),[sP0,sMM]))
-				append!(miniVal,-y1 .* [y2,z])
-			elseif sp==sP0
-				append!(miniRow,map(s->newPreind(state,i,s),[s0P,sMM]))
-				append!(miniVal,-y2 .* [y1,z])
-			elseif sp==sMM
-				append!(miniRow,map(s->newPreind(state,i,s),[s0P,sP0]))
-				append!(miniVal,-z .* [y1,y2])
-			elseif sp==s0M
-				append!(miniRow,map(s->newPreind(state,i,s),[sM0,sPP]))
-				append!(miniVal,-y2 .* [y1,z])
-			elseif sp==sM0
-				append!(miniRow,map(s->newPreind(state,i,s),[s0M,sPP]))
-				append!(miniVal,-y1 .* [y2,z])
-			elseif sp==sPP
-				append!(miniRow,map(s->newPreind(state,i,s),[s0M,sM0]))
-				append!(miniVal,-z .* [y2,y1])
-			end
-		end
-
-		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
-
-		if (pInd % (pLen / 10)) == 1 || pInd == pLen
-			num = res.colptr[ncol]
-			for c in col
-				ncol += 1
-				num += c
-				res.colptr[ncol] = num
-			end
-			append!(res.rowval, row)
-			append!(res.nzval, val)
-			col=MyInt[]
-			row=MyInt[]
-			val=ComplexF64[]
-		end
-		append!(res.rowval, row)
-		append!(res.nzval, val)
-		row=MyInt[]
-		val=ComplexF64[]
 	end
-	return res
+	return sparse(row,col,val,len,pLen)
 end
 
+# function buildFixPBasis(p::Int64)
+# 	res = sparse(MyInt[],MyInt[],ComplexF64[],len,pLen)
+# 	col=MyInt[]
+# 	row=MyInt[]
+# 	val=ComplexF64[]
+# 	ncol = 1
+# 	for pInd = 1 : pLen
+# 		miniRow = MyInt[]
+# 		miniVal = ComplexF64[]
+		
+# 		orbit = pBasis[pInd]
+# 		oLen = length(orbit)
+# 		if mod(p * oLen, L) == 0
+# 			cnt = 0
+# 			for ind in orbit
+# 				preind = fromInd[ind]
+# 				factor = exp(2 * π * im * p / L) / sqrt(oLen)
+# 				append!(miniRow, [preind])
+# 				append!(miniVal, [factor])
+# 				cnt += 1
+# 			end
+# 		end
 
-# #=
-# Diagonalize Hamiltonian.
-# =#
+# 		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
 
-# function eigs_ArnoldiMethod(H)
-# 	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
-# 	e,v = ArnoldiMethod.partialeigen(decomp)
-# 	return e,v
-# end
-
-# function eigs_KrylovKit(H)
-# 	val,vecs,info = KrylovKit.eigsolve(H,rand(eltype(H),size(H,1)),nev,:SR;issymmetric=true, krylovdim=2*nev+1)
-# 	mat = zeros(size(vecs,1),len)
-# 	mat = zeros(len,size(vecs,1))
-# 	cnt = 1
-# 	for v in vecs
-# 		mat[:,cnt] = v
-# 		cnt += 1
+# 		if (pInd % (pLen / 10)) == 1 || pInd == pLen
+# 			num = res.colptr[ncol]
+# 			for c in col
+# 				ncol += 1
+# 				num += c
+# 				res.colptr[ncol] = num
+# 			end
+# 			append!(res.rowval, row)
+# 			append!(res.nzval, val)
+# 			col=MyInt[]
+# 			row=MyInt[]
+# 			val=ComplexF64[]
+# 		end
+# 		append!(res.rowval, row)
+# 		append!(res.nzval, val)
+# 		row=MyInt[]
+# 		val=ComplexF64[]
 # 	end
-# 	return val,mat
+# 	return res
 # end
+
+U = buildFixPBasis(P)
+H = buildH(diag_,flag_)
+
+println("Sparse")
+@time HH = adjoint(U) * H * U
+@time e,v = Arpack.eigs(HH,nev=nev,which=:SR)
+println(sort(real(e)))
+println()
+
+println("LinearMap")
+H = LinearMap(adjoint(U)) * LinearMap(H) * LinearMap(U)
+@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+println(sort(real(e)))
+println()
+
+
+
+#=
+Diagonalize Hamiltonian.
+=#
+
+function eigs_ArnoldiMethod(H)
+	decomp,history = ArnoldiMethod.partialschur(H,nev=nev,which=ArnoldiMethod.SR())
+	e,v = ArnoldiMethod.partialeigen(decomp)
+	return e,v
+end
+
+function eigs_KrylovKit(H)
+	val,vecs,info = KrylovKit.eigsolve(H,rand(eltype(H),size(H,1)),nev,:SR;issymmetric=true, krylovdim=2*nev+1)
+	mat = zeros(size(vecs,1),len)
+	mat = zeros(len,size(vecs,1))
+	cnt = 1
+	for v in vecs
+		mat[:,cnt] = v
+		cnt += 1
+	end
+	return val,mat
+end
 
 # const eigPath = dataPathL * "eig.jld2"
 # if ispath(eigPath)
