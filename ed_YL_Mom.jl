@@ -9,8 +9,8 @@ using JLD2
 const MyInt = Int64
 const MyFloat = Float32
 
-const L = 5
-const P = 1
+const L = 9
+const P = 0
 const nev = 10
 const dataPath = "data/"
 
@@ -35,9 +35,6 @@ if !ispath(dataPath)
 end
 if !ispath(dataPathL)
 	mkdir(dataPathL)
-end
-if !ispath(dataPathL * "H/")
-	mkdir(dataPathL * "H/")
 end
 if !ispath(dataPathL * "rhov/")
 	mkdir(dataPathL * "rhov/")
@@ -277,30 +274,42 @@ T=LinearMap((C,B)->Tfunc!(C,B),len,ismutating=true,issymmetric=false,isposdef=fa
 Restrict to fixed momentum
 =#
 
-function BuildPBasis(pBasis)
-	done = []
+function BuildPOrbit(pOrbit)
+	done = Dict{MyInt, Bool}()
 	for ind in basis
-		if ind in done
+		if haskey(done, ind)
 			continue
 		end
-		push!(pBasis, [ind])
+		push!(pOrbit, [ind])
 		tind = ind
 		for i in 1 : L-1
 			tind = Tind(tind, L, false)
-			if tind in pBasis[length(pBasis)]
+			if tind in pOrbit[length(pOrbit)]
 				continue
 			end
-			push!(pBasis[length(pBasis)], tind)
-			push!(done, tind)
+			push!(pOrbit[length(pOrbit)], tind)
+			push!(done, tind => true)
 		end
 	end
 end
 
-pBasis = []
-BuildPBasis(pBasis)
-pLen = length(pBasis)
+const pOrbitPath = dataPathL * "p_orbit.jld2"
+if ispath(pOrbitPath)
+	println("load P orbit...")
+	flush(stdout)
+	@time @load pOrbitPath pOrbit pLen
+else
+	println("compute P orbit...")
+	flush(stdout)
+	pOrbit = []
+	@time BuildPOrbit(pOrbit)
+	pLen = length(pOrbit)
+	@time @save pOrbitPath pOrbit pLen
+end
+println()
+flush(stdout)
 
-# for orbit in pBasis
+# for orbit in pOrbit
 # 	println( [stringFromState(x-1,L) for x in orbit] )
 # end
 
@@ -671,90 +680,75 @@ function Hfunc!(C,B,diag::Vector{MyFloat},flag::Vector{MyInt})
 	end
 end
 
-function buildFixPBasis(p::Int64)
-	col=MyInt[]
-	row=MyInt[]
-	val=ComplexF64[]
-	for pInd = 1 : pLen
-		orbit = pBasis[pInd]
-		oLen = length(orbit)
-		if mod(p * oLen, L) != 0
-			continue
-		end
-		cnt = 0
-		for ind in orbit
-			preind = fromInd[ind]
-			factor = exp(2 * π * im * p / L) / sqrt(oLen)
-			append!(col, [pInd])
-			append!(row, [preind])
-			append!(val, [factor])
-			cnt += 1
-		end
-	end
-	return sparse(row,col,val,len,pLen)
-end
-
 # function buildFixPBasis(p::Int64)
-# 	res = sparse(MyInt[],MyInt[],ComplexF64[],len,pLen)
 # 	col=MyInt[]
 # 	row=MyInt[]
 # 	val=ComplexF64[]
-# 	ncol = 1
 # 	for pInd = 1 : pLen
-# 		miniRow = MyInt[]
-# 		miniVal = ComplexF64[]
-		
-# 		orbit = pBasis[pInd]
+# 		orbit = pOrbit[pInd]
 # 		oLen = length(orbit)
-# 		if mod(p * oLen, L) == 0
-# 			cnt = 0
-# 			for ind in orbit
-# 				preind = fromInd[ind]
-# 				factor = exp(2 * π * im * p / L) / sqrt(oLen)
-# 				append!(miniRow, [preind])
-# 				append!(miniVal, [factor])
-# 				cnt += 1
-# 			end
+# 		if mod(p * oLen, L) != 0
+# 			continue
 # 		end
-
-# 		sortAndAppendColumn!(col, row, val, miniRow, miniVal)
-
-# 		if (pInd % (pLen / 10)) == 1 || pInd == pLen
-# 			num = res.colptr[ncol]
-# 			for c in col
-# 				ncol += 1
-# 				num += c
-# 				res.colptr[ncol] = num
-# 			end
-# 			append!(res.rowval, row)
-# 			append!(res.nzval, val)
-# 			col=MyInt[]
-# 			row=MyInt[]
-# 			val=ComplexF64[]
+# 		cnt = 0
+# 		for ind in orbit
+# 			preind = fromInd[ind]
+# 			factor = exp(2 * π * im * p * cnt / L) / sqrt(oLen)
+# 			append!(col, [pInd])
+# 			append!(row, [preind])
+# 			append!(val, [factor])
+# 			cnt += 1
 # 		end
-# 		append!(res.rowval, row)
-# 		append!(res.nzval, val)
-# 		row=MyInt[]
-# 		val=ComplexF64[]
 # 	end
-# 	return res
+# 	return sparse(row,col,val,len,pLen)
 # end
 
-U = buildFixPBasis(P)
-H = buildH(diag_,flag_)
+function buildFixPBasis(p::Int64)
+	res = sparse(MyInt[],MyInt[],ComplexF64[],len,pLen)
+	col=MyInt[]
+	row=MyInt[]
+	val=ComplexF64[]
+	ncol = 1
+	for pInd = 1 : pLen
+		miniRow = MyInt[]
+		miniVal = ComplexF64[]
+		
+		orbit = pOrbit[pInd]
+		oLen = length(orbit)
+		if mod(p * oLen, L) == 0
+			cnt = 0
+			for ind in orbit
+				preind = fromInd[ind]
+				factor = exp(2 * π * im * p * cnt / L) / sqrt(oLen)
+				append!(miniRow, [preind])
+				append!(miniVal, [factor])
+				cnt += 1
+			end
+			sortAndAppendColumn!(col, row, val, miniRow, miniVal)
+		else
+			push!(col, 0)
+		end
 
-println("Sparse")
-@time HH = adjoint(U) * H * U
-@time e,v = Arpack.eigs(HH,nev=nev,which=:SR)
-println(sort(real(e)))
-println()
-
-println("LinearMap")
-H = LinearMap(adjoint(U)) * LinearMap(H) * LinearMap(U)
-@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-println(sort(real(e)))
-println()
-
+		if (pInd % (pLen / 10)) == 1 || pInd == pLen
+			num = res.colptr[ncol]
+			for c in col
+				ncol += 1
+				num += c
+				res.colptr[ncol] = num
+			end
+			append!(res.rowval, row)
+			append!(res.nzval, val)
+			col=MyInt[]
+			row=MyInt[]
+			val=ComplexF64[]
+		end
+		append!(res.rowval, row)
+		append!(res.nzval, val)
+		row=MyInt[]
+		val=ComplexF64[]
+	end
+	return res
+end
 
 
 #=
@@ -767,10 +761,22 @@ function eigs_ArnoldiMethod(H)
 	return e,v
 end
 
+# function eigs_KrylovKit(H)
+# 	val,vecs,info = KrylovKit.eigsolve(H,rand(eltype(H),size(H,1)),nev,:SR;issymmetric=true, krylovdim=2*nev+1)
+# 	mat = zeros(size(vecs,1),len)
+# 	mat = zeros(len,size(vecs,1))
+# 	cnt = 1
+# 	for v in vecs
+# 		mat[:,cnt] = v
+# 		cnt += 1
+# 	end
+# 	return val,mat
+# end
+
 function eigs_KrylovKit(H)
 	val,vecs,info = KrylovKit.eigsolve(H,rand(eltype(H),size(H,1)),nev,:SR;issymmetric=true, krylovdim=2*nev+1)
-	mat = zeros(size(vecs,1),len)
-	mat = zeros(len,size(vecs,1))
+	mat = zeros(size(vecs,1),pLen)
+	mat = zeros(pLen,size(vecs,1))
 	cnt = 1
 	for v in vecs
 		mat[:,cnt] = v
@@ -778,6 +784,62 @@ function eigs_KrylovKit(H)
 	end
 	return val,mat
 end
+
+HPath = dataPathL * "H.jld2"
+if ispath(HPath)
+	println("load H...")
+	flush(stdout)
+	@load HPath H
+else
+	println("build H...")
+	flush(stdout)
+	@time H=buildH(diag_,flag_)
+	@save HPath H
+end
+println()
+flush(stdout)
+
+U = buildFixPBasis(P)
+
+# println("Sparse")
+println("compute eigen for P=" * string(P) * "...")
+@time H = real(adjoint(U) * H * U)
+println()
+flush(stdout)
+if eigSolver == "Arpack"
+	println("using Arpack:")
+	flush(stdout)
+	@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+	println(sort(real(e)))
+elseif eigSolver == "ArnoldiMethod"
+	println("using ArnoldiMethod:")
+	flush(stdout)
+	@time e,v = eigs_ArnoldiMethod(H)
+	println(sort(e))
+elseif eigSolver == "KrylovKit"
+	println("using KrylovKit:")
+	flush(stdout)
+	@time e,v = eigs_KrylovKit(H)
+	println(sort(e))
+else
+	println("invalid eigensolver...bye")
+	flush(stdout)
+	exit()
+end
+# if length(e) > nev
+# 	e = e[1:nev]
+# 	v = v[:,1:nev]
+# end
+# println()
+# flush(stdout)
+println()
+flush(stdout)
+
+# println("LinearMap")
+# H = LinearMap(adjoint(U)) * LinearMap(H) * LinearMap(U)
+# @time e,v = Arpack.eigs(H,nev=nev,which=:SR)
+# println(sort(real(e)))
+# println()
 
 # const eigPath = dataPathL * "eig.jld2"
 # if ispath(eigPath)
