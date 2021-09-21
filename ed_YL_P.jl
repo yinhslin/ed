@@ -11,7 +11,7 @@ const MyFloat = Float32
 const MyComplex = ComplexF32
 
 # const L = 6
-# const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+# const P = 1 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
 # const nev = 10
 # const dataPath = "data/"
 
@@ -19,6 +19,7 @@ const L = parse(Int64, ARGS[1])
 const P = parse(Int64, ARGS[2])
 const nev = parse(Int64, ARGS[3])
 const dataPath = "/lustre/work/yinghsuan.lin/ed/data3/" # NOTE If on cluster set to scratch space
+
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
@@ -803,7 +804,7 @@ if P == -1
 		U = buildFixPBasis(p)
 		global H
 		local HP
-		@time HP = real(adjoint(U) * H * U)
+		@time HP = adjoint(U) * H * U
 		@save dataPathL * "H_P/H_" * string(p) * ".jld2" HP U
 		println()
 		flush(stdout)
@@ -834,16 +835,19 @@ else
 				println("using Arpack:")
 				flush(stdout)
 				@time e,v = Arpack.eigs(H,nev=nev,which=:SR)
-				println(sort(real(e)))
+				e = real(e)
+				println(sort(e))
 			elseif eigSolver == "ArnoldiMethod"
 				println("using ArnoldiMethod:")
 				flush(stdout)
 				@time e,v = eigs_ArnoldiMethod(H)
+				e = real(e)
 				println(sort(e))
 			elseif eigSolver == "KrylovKit"
 				println("using KrylovKit:")
 				flush(stdout)
 				@time e,v = eigs_KrylovKit(H)
+				e = real(e)
 				println(sort(e))
 			else
 				println("invalid eigensolver...bye")
@@ -862,6 +866,19 @@ else
 		end
 		println()
 		flush(stdout)
+	end
+
+	if P == L
+		eAll = Array{MyFloat}(undef, 0)
+		vAll = Array{MyFloat}(undef, plen, 0)
+		for P = 0 : Int64(floor(L/2))
+			eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
+			@load eigPPath e v
+			append!(eAll, e)
+			global vAll = hcat(vAll, v)
+		end
+		e = eAll
+		v = vAll
 	end
 
 	if !onlyT

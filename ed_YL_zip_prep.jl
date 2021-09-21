@@ -10,15 +10,14 @@ const MyInt = Int64
 const MyFloat = Float32
 const MyComplex = ComplexF32
 
-const L = 12
-# const P = 18 # "prepare" mode if P==L and "eigen" mode if P==0, ..., L-1
-# const nev = 20
-const dataPath = "data/"
+# const L = 3
+# const X = 4
+# const dataPath = "data/"
 
-# const L = parse(Int64, ARGS[1])
-# const P = parse(Int64, ARGS[2])
-# const nev = parse(Int64, ARGS[3])
-# const dataPath = "/lustre/work/yinghsuan.lin/ed/data/" # NOTE If on cluster set to scratch space
+const L = parse(Int64, ARGS[1])
+const X = parse(Int64, ARGS[2])
+const dataPath = "/lustre/work/yinghsuan.lin/ed/data3/" # NOTE If on cluster set to scratch space
+
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 # const eigSolver = "ArnoldiMethod" # "Arpack" "ArnoldiMethod" "KrylovKit"
@@ -1491,7 +1490,13 @@ function prepare!(below::Int64)
 		if below == 0
 			global inBasis = basis
 		else
-			global inBasis = outBasis
+			preparePathPrev = dataPathL * "prep/prep_" * string(below-1) * ".jld2"
+			if ispath(preparePathPrev)
+				@load preparePathPrev outBasis
+				global inBasis = outBasis
+			else
+				global inBasis = getExtendedBasis(basisLego_, L, below)
+			end
 		end
 		if below == L+1
 			global outBasis = basis
@@ -1534,22 +1539,38 @@ if !onlyT
 	flush(stdout)
 end
 
-attachPath = dataPathL * "attach.jld2"
-@time prepare!(0)
-if ispath(attachPath)
-	println("load attach...")
+if X == 0
+	attachPath = dataPathL * "attach.jld2"
+	@time prepare!(0)
+	if ispath(attachPath)
+		println("load attach...")
+		flush(stdout)
+		@time @load attachPath ρ
+	else
+		println("build attach...")
+		flush(stdout)
+		@time local ρ = buildAttach()
+		@time @save attachPath ρ
+	end
+	println()
 	flush(stdout)
-	@time @load attachPath ρ
+elseif X == L+1
+	detachPath = dataPathL * "detach.jld2"
+	@time prepare!(L+1)
+	if ispath(detachPath)
+		println("load detach...")
+		flush(stdout)
+		@time @load detachPath ρ
+	else
+		println("build detach...")
+		flush(stdout)
+		@time local ρ = buildDetach()
+		@time @save detachPath ρ
+	end
+	println()
+	flush(stdout)
 else
-	println("build attach...")
-	flush(stdout)
-	@time local ρ = buildAttach()
-	@time @save attachPath ρ
-end
-println()
-flush(stdout)
-
-for i = 1 : L
+	i = X
 	@time prepare!(i)
 	zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
 	if ispath(zipPath)
@@ -1566,25 +1587,57 @@ for i = 1 : L
 	flush(stdout)
 end
 
-detachPath = dataPathL * "detach.jld2"
-@time prepare!(L+1)
-if ispath(detachPath)
-	println("load detach...")
-	flush(stdout)
-	@time @load detachPath ρ
-else
-	println("build detach...")
-	flush(stdout)
-	@time local ρ = buildDetach()
-	@time @save detachPath ρ
-end
-println()
-flush(stdout)
+# attachPath = dataPathL * "attach.jld2"
+# @time prepare!(0)
+# if ispath(attachPath)
+# 	println("load attach...")
+# 	flush(stdout)
+# 	@time @load attachPath ρ
+# else
+# 	println("build attach...")
+# 	flush(stdout)
+# 	@time local ρ = buildAttach()
+# 	@time @save attachPath ρ
+# end
+# println()
+# flush(stdout)
+
+# for i = 1 : L
+# 	@time prepare!(i)
+# 	zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
+# 	if ispath(zipPath)
+# 		println("load zip ", i, "...")
+# 		flush(stdout)
+# 		@time @load zipPath ρ
+# 	else
+# 		println("build zip ", i, "...")
+# 		flush(stdout)
+# 		@time local ρ = buildZip(i)
+# 		@time @save zipPath ρ
+# 	end
+# 	println()
+# 	flush(stdout)
+# end
+
+# detachPath = dataPathL * "detach.jld2"
+# @time prepare!(L+1)
+# if ispath(detachPath)
+# 	println("load detach...")
+# 	flush(stdout)
+# 	@time @load detachPath ρ
+# else
+# 	println("build detach...")
+# 	flush(stdout)
+# 	@time local ρ = buildDetach()
+# 	@time @save detachPath ρ
+# end
+# println()
+# flush(stdout)
 
 function ρMatrix(v)
 	if buildSparse
 		@time prepare!(0)
-
+		outBasis = nothing
 		donePath = dataPathL * "done/done_" * string(nev) * "_" * string(0) * ".jld2"
 		if !ispath(donePath)
 			attachPath = dataPathL * "attach.jld2"
@@ -1618,6 +1671,7 @@ function ρMatrix(v)
 
 		for i = 1 : L
 			@time prepare!(i)
+			outBasis = nothing
 			donePath = dataPathL * "done/done_" * string(nev) * "_" * string(i) * ".jld2"
 			if !ispath(donePath)
 				zipPath = dataPathL * "zip/zip_" * string(i) * ".jld2"
@@ -1653,7 +1707,7 @@ function ρMatrix(v)
 		end
 
 		@time prepare!(L+1)
-
+		outBasis = nothing
 		donePath = dataPathL * "done/done_" * string(nev) * "_" * string(L+1) * ".jld2"
 		if !ispath(donePath)
 			detachPath = dataPathL * "detach.jld2"
