@@ -9,18 +9,24 @@ using JLD2
 const MyInt = Int64
 const MyFloat = Float32
 
-# const L = 3
+# const L = 6
 # const nev = 10
+# const Q = 1
 # const dataPath = "data/"
 
 const L = parse(Int64, ARGS[1])
 const nev = parse(Int64, ARGS[2])
-const dataPath = "/lustre/work/yinghsuan.lin/ed/data/" # NOTE If on cluster set to scratch space
+if length(ARGS) < 3
+	const Q = 0
+else
+	const Q = parse(Int64, ARGS[3])
+end
+const dataPath = "/lustre/work/yinghsuan.lin/ed/data3/" # NOTE If on cluster set to scratch space
 
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
-const onlyT = false # compute eigenstates of H and measure T but not ρ
+const onlyT = true # compute eigenstates of H and measure T but not ρ
 const buildSparse = true # use sparse matrices and not LinearMap
 
 
@@ -28,7 +34,7 @@ const buildSparse = true # use sparse matrices and not LinearMap
 Save/load hard disk to reduce memory usage when measuring ρ.
 =#
 
-const dataPathL = dataPath * string(L) * "/"
+const dataPathL = dataPath * string(L) * "_" * string(Q) * "/"
 if !ispath(dataPath)
 	mkdir(dataPath)
 end
@@ -214,9 +220,9 @@ end
 # basis of states (not inds)
 function getBasisLego(basisLego::Dict{Tuple{Int8,Bool,Bool,Int8},Vector{Int64}}, L::Int64)::Vector{Int64}
 	res = []
-	append!(res, getBasisLego(basisLego, L, true, true, 0))
-	append!(res, getBasisLego(basisLego, L, false, false, 0))
-	if iseven(L)
+	append!(res, getBasisLego(basisLego, L, true, true, Q))
+	append!(res, getBasisLego(basisLego, L, false, false, Q))
+	if iseven(L) && Q == 0
 		append!(res, [0, 1])
 	end
 	sort!(res)
