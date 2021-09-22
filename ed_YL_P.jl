@@ -11,9 +11,9 @@ const MyFloat = Float32
 const MyComplex = ComplexF32
 
 # const L = 6
-# const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+# const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
 # const nev = 10
-# const Q = 1
+# const Q = 0
 # const dataPath = "data/"
 
 const L = parse(Int64, ARGS[1])
@@ -807,6 +807,7 @@ if P == -1
 	flush(stdout)
 	for p in 0 : Int64(floor(L/2))
 		println("P=" * string(p))
+		local U
 		U = buildFixPBasis(p)
 		global H
 		local HP
@@ -824,6 +825,9 @@ else
 		Ps = [P]
 	end
 	for P in Ps
+		global e
+		global v
+		local eigPPath
 		eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 		if ispath(eigPPath)
 			println("load eigen...")
@@ -831,7 +835,11 @@ else
 			@time @load eigPPath e v
 		end
 		if !ispath(eigPPath) || length(e) < nev
+			if !ispath(dataPathL * "H_P/H_" * string(P) * ".jld2")
+				throw("Run P=-1 first")
+			end
 			@load dataPathL * "H_P/H_" * string(P) * ".jld2" HP
+			local H
 			H = HP
 			# println("Sparse")
 			println("compute eigen for P=" * string(P) * "...")
@@ -876,8 +884,9 @@ else
 
 	if P == L
 		eAll = Array{MyFloat}(undef, 0)
-		vAll = Array{MyFloat}(undef, plen, 0)
+		vAll = Array{MyFloat}(undef, pLen, 0)
 		for P = 0 : Int64(floor(L/2))
+			local eigPPath
 			eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 			@load eigPPath e v
 			append!(eAll, e)
@@ -888,10 +897,14 @@ else
 	end
 
 	if !onlyT
+		global e
+		global v
+		local U
 		if P == L
 			eAll = Array{MyFloat}(undef, 0)
 			vAll = Array{MyFloat}(undef, len, 0)
 			for P = 0 : Int64(floor(L/2))
+				local eigPPath
 				eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 				@load eigPPath e v
 				append!(eAll, e)
@@ -1707,10 +1720,11 @@ function diagonalizeHT(e,v,T)
 	println()
 	flush(stdout)
 
-	smallH = Matrix(diagm(e))
-	smalle,smallv = eigen(smallH*L*10)
+	# smallH = Matrix(diagm(e))
+	# smalle,smallv = eigen(smallH*L*10)
+	# Hs = real(diag(adjoint(smallv)*smallH*smallv))
 
-	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Hs = e
 	if P == L
 		Ps = [ P * ones(nev) for P in 0 : Int64(floor(L/2)) ]
 		Ps = [(Ps...)...]
@@ -1730,16 +1744,24 @@ function diagonalizeHTρ(e,v,T)
 	flush(stdout)
 
 	smallH = Matrix(diagm(e))
-	smallρ = ρMatrix(v)
-	smalle,smallv = eigen(smallH*L*10+smallρ)
-
-	Hs = real(diag(adjoint(smallv)*smallH*smallv))
 	if P == L
 		Ps = [ P * ones(nev) for P in 0 : Int64(floor(L/2)) ]
 		Ps = [(Ps...)...]
 	else
 		Ps = P * ones(nev)
 	end
+	smallP = diagm(Ps)
+	smallρ = ρMatrix(v)
+	smalle,smallv = eigen(smallH*L*10+smallρ)
+
+	Hs = real(diag(adjoint(smallv)*smallH*smallv))
+	Ps = real(diag(adjoint(smallv)*smallP*smallv))
+	# if P == L
+	# 	Ps = [ P * ones(nev) for P in 0 : Int64(floor(L/2)) ]
+	# 	Ps = [(Ps...)...]
+	# else
+	# 	Ps = P * ones(nev)
+	# end
 	ρs = real(diag(adjoint(smallv)*smallρ*smallv))
 	HPρs = hcat(Hs,Ps,ρs)
 	HPρs = sort([HPρs[i,:] for i in 1:size(HPρs, 1)])
