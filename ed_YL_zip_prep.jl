@@ -7,7 +7,8 @@ using BenchmarkTools
 using JLD2
 
 const MyInt = Int64
-const MyFloat = Float32
+const MyFloat = Float64
+const ZipFloat = Float32
 const MyComplex = ComplexF32
 
 # const L = 3
@@ -16,7 +17,7 @@ const MyComplex = ComplexF32
 
 const L = parse(Int64, ARGS[1])
 const X = parse(Int64, ARGS[2])
-const dataPath = "/lustre/work/yinghsuan.lin/ed/data3/" # NOTE If on cluster set to scratch space
+const dataPath = "/lustre/work/yinghsuan.lin/ed/data4/" # NOTE If on cluster set to scratch space
 
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
@@ -29,7 +30,7 @@ const buildSparse = true # use sparse matrices and not LinearMap
 Save/load hard disk to reduce memory usage when measuring ρ.
 =#
 
-const dataPathL = dataPath * string(L) * "/"
+const dataPathL = dataPath * string(L) * "_0/"
 if !ispath(dataPath)
 	mkdir(dataPath)
 end
@@ -510,7 +511,7 @@ end
 
 newPreind(state,i,sp) = fromInd[newInd(state,i,sp)]
 
-TT = Union{Vector{MyFloat},Vector{Float16},Vector{MyComplex}}
+TT = Union{Vector{MyFloat},Vector{ZipFloat},Vector{MyComplex}}
 
 stripT(::Type{Vector{T}}) where {T} = T
 
@@ -1228,7 +1229,7 @@ end
 function buildAttach()
 	col=MyInt[]
 	row=MyInt[]
-	val=Float16[]
+	val=ZipFloat[]
 	for preind = 1 : len
 		ind = basis[preind]
 		state = stateFromInd(ind)
@@ -1313,14 +1314,14 @@ function zip!(C,B,i::Int64)
 end
 
 function buildZip(i::Int64)
-	res = sparse(MyInt[],MyInt[],Float16[],ziplen,ziplen)
+	res = sparse(MyInt[],MyInt[],ZipFloat[],ziplen,ziplen)
 	col=MyInt[]
 	row=MyInt[]
-	val=Float16[]
+	val=ZipFloat[]
 	ncol = 1
 	for preind = 1 : ziplen
 		miniRow = Int64[]
-		miniVal = Float16[]
+		miniVal = ZipFloat[]
 		ind = inBasis[preind]
 		e1 = Int64(edgeAtDrapeMapping[preind])
 		state = stateFromInd(ind,L+2)
@@ -1347,12 +1348,12 @@ function buildZip(i::Int64)
 			append!(res.nzval, val)
 			col=MyInt[]
 			row=MyInt[]
-			val=Float16[]
+			val=ZipFloat[]
 		end
 		append!(res.rowval, row)
 		append!(res.nzval, val)
 		row=MyInt[]
-		val=Float16[]
+		val=ZipFloat[]
 	end
 	return res
 end
@@ -1393,7 +1394,7 @@ end
 function buildDetach()
 	col=MyInt[]
 	row=MyInt[]
-	val=Float16[]
+	val=ZipFloat[]
 	for preind = 1 : ziplen
 		ind = inBasis[preind]
 		state = stateFromInd(ind,L+2)
@@ -1525,6 +1526,13 @@ if !onlyT
 		println("load zipper...")
 		flush(stdout)
 		@time @load prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
+		# @time @load prepZipPath inBasis outBasis ziplen
+		# println("finished loading prepZip.")
+		# zipFromInd = Dict{Int64,MyInt}((outBasis[x],MyInt(x)) for x in 1 : ziplen)
+		# println("finished computing zipFromInd.")
+		# edgeAtDrapeMapping = zeros(Int8,ziplen)
+		# println("finished edgeAtDrape.")
+		# @time @save prepZipPath inBasis outBasis ziplen zipFromInd edgeAtDrapeMapping
 	else
 		println("prepare zipper...")
 		flush(stdout)
@@ -1739,7 +1747,7 @@ function ρMatrix(v)
 		end
 		@save donePath donePath
 
-		u = Matrix{Float16}(undef, len, length(e))
+		u = Matrix{ZipFloat}(undef, len, length(e))
 		for s = 1 : length(e)
 			path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(s) * ".jld2"
 			@time @load path rhov
