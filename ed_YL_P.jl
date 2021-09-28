@@ -7,37 +7,36 @@ using BenchmarkTools
 using JLD2
 
 const MyInt = Int64
-const MyFloat = Float64
-const ZipFloat = Float32
+const MyFloat = Float32
+const ZipFloat = Float16
 const MyComplex = ComplexF32
 
-# const L = 6
-# const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
-# const nev = 10
-# const Q = 0
-# const dataPath = "data/"
+const L = 6
+const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+const nev = 10
+const Q = 0
+const dataPath = "data/"
 
-const L = parse(Int64, ARGS[1])
-const P = parse(Int64, ARGS[2])
-const nev = parse(Int64, ARGS[3])
-if length(ARGS) < 4
-	const Q = 0
-else
-	const Q = parse(Int64, ARGS[4])
-end
-const dataPath = "/lustre/work/yinghsuan.lin/ed/data4/" # NOTE If on cluster set to scratch space
+# const L = parse(Int64, ARGS[1])
+# const P = parse(Int64, ARGS[2])
+# const nev = parse(Int64, ARGS[3])
+# if length(ARGS) < 4
+# 	const Q = 0
+# else
+# 	const Q = parse(Int64, ARGS[4])
+# end
+# const dataPath = "/lustre/work/yinghsuan.lin/ed/data4/" # NOTE If on cluster set to scratch space
 
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
-const onlyT = true # compute eigenstates of H and measure T but not ρ
+const onlyT = false # compute eigenstates of H and measure T but not ρ
 const buildSparse = true # use sparse matrices and not LinearMap
 
 
 #=
 Save/load hard disk to reduce memory usage when measuring ρ.
 =#
-
 const dataPathL = dataPath * string(L) * "_" * string(Q) * "/"
 if !ispath(dataPath)
 	mkdir(dataPath)
@@ -1753,7 +1752,7 @@ function diagonalizeHTρ(e,v,T)
 	end
 	smallP = diagm(Ps)
 	smallρ = ρMatrix(v)
-	smalle,smallv = eigen(smallH*L*10+smallρ)
+	smalle,smallv = eigen(smallH*L*10+smallP/L+smallρ)
 
 	Hs = real(diag(adjoint(smallv)*smallH*smallv))
 	Ps = real(diag(adjoint(smallv)*smallP*smallv))
