@@ -12,7 +12,7 @@ const ZipFloat = Float16
 const MyComplex = ComplexF32
 
 const L = 6
-const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
 const nev = 10
 const Q = 0
 const dataPath = "data/"
@@ -31,7 +31,7 @@ const dataPath = "data/"
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
 const onlyT = false # compute eigenstates of H and measure T but not ρ
-const buildSparse = true # use sparse matrices and not LinearMap
+const buildSparse = false # use sparse matrices and not LinearMap
 
 
 #=
@@ -1235,24 +1235,27 @@ function attach!(C,B)
 	Threads.@threads for preind = 1 : ziplen
 		C[preind] = 0
 	end
-	for preind = 1 : len
-		ind = basis[preind]
-		if B[preind] == 0
-			continue
-		end
-		state = stateFromInd(ind)
-		if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
-			ni = attachPreind(ind,sXX,0,L+2)
-			C[ni] += B[preind]
-		else
-			ni = attachPreind(ind,sXX,0,L+2)
-			C[ni] += 1/ζ * B[preind]
-			ni = attachPreind(ind,s00,0,L+2)
-			C[ni] += ξ * B[preind]
-			ni = attachPreind(ind,sPM,1,L+2)
-			C[ni] += ξ * B[preind]
-			ni = attachPreind(ind,sMP,2,L+2)
-			C[ni] += ξ * B[preind]
+	batchsize = Int64(ceil(len / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			ind = basis[preind]
+			if B[preind] == 0
+				continue
+			end
+			state = stateFromInd(ind)
+			if (isodd(trailingXs(state)) || (iseven(L) && ind==2))
+				ni = attachPreind(ind,sXX,0,L+2)
+				C[ni] += B[preind]
+			else
+				ni = attachPreind(ind,sXX,0,L+2)
+				C[ni] += 1/ζ * B[preind]
+				ni = attachPreind(ind,s00,0,L+2)
+				C[ni] += ξ * B[preind]
+				ni = attachPreind(ind,sPM,1,L+2)
+				C[ni] += ξ * B[preind]
+				ni = attachPreind(ind,sMP,2,L+2)
+				C[ni] += ξ * B[preind]
+			end
 		end
 	end
 end
@@ -1324,21 +1327,24 @@ function zip!(C,B,i::Int64)
 	Threads.@threads for preind = 1 : ziplen
 		C[preind] = 0
 	end
-	for preind = 1 : ziplen
-		ind = inBasis[preind]
-		if B[preind] == 0
-			continue
-		end
-		e1 = Int64(edgeAtDrapeMapping[preind])
-		state = stateFromInd(ind,L+2)
-		s1,s2 = localStatePair(state,i,L+2)
-		for s3 = 0 : 3
-			for s4 = 0 : 3
-				if FSymbolZipper(e1,s1,s2,s3,s4)==0
-					continue
+	batchsize = Int64(ceil(ziplen / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			ind = inBasis[preind]
+			if B[preind] == 0
+				continue
+			end
+			e1 = Int64(edgeAtDrapeMapping[preind])
+			state = stateFromInd(ind,L+2)
+			s1,s2 = localStatePair(state,i,L+2)
+			for s3 = 0 : 3
+				for s4 = 0 : 3
+					if FSymbolZipper(e1,s1,s2,s3,s4)==0
+						continue
+					end
+					ni = zipPreInd(i+1,ind,(s3,s4),L+2)
+					C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 				end
-				ni = zipPreInd(i+1,ind,(s3,s4),L+2)
-				C[ni] += FSymbolZipper(e1,s1,s2,s3,s4) * B[preind]
 			end
 		end
 	end
@@ -1393,30 +1399,33 @@ function detach!(C,B)
 	Threads.@threads for preind = 1 : len
 		C[preind] = 0
 	end
-	for preind = 1 : ziplen
-		ind = inBasis[preind]
-		if B[preind] == 0
-			continue
-		end
-		state = stateFromInd(ind,L+2)
-		ni = 1+(state&(4^L-1))
-		if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
-			ni=2
-		end
-		if !haskey(fromInd, ni)
-			continue
-		end
-		ni = fromInd[ni]
-		sp = localStatePair(state,L+1,L+2)
-		if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2)
-			if sp==sXX
-				C[ni] += ζ * B[preind]
+	batchsize = Int64(ceil(ziplen / Threads.nthreads()))
+	Threads.@threads for t = 1 : Threads.nthreads()
+		for preind = 1 + (t-1)*batchsize : t*batchsize
+			ind = inBasis[preind]
+			if B[preind] == 0
+				continue
 			end
-		else
-			if sp==sXX
-				C[ni] += B[preind]
-			elseif sp==s00 || sp==sPM || sp==sMP
-				C[ni] += √ζ * B[preind]
+			state = stateFromInd(ind,L+2)
+			ni = 1+(state&(4^L-1))
+			if ni==1 && ((ind-1)&(4^(L+2)-1))==1 && iseven(L)
+				ni=2
+			end
+			if !haskey(fromInd, ni)
+				continue
+			end
+			ni = fromInd[ni]
+			sp = localStatePair(state,L+1,L+2)
+			if (isodd(trailingXs(state,L+2)) || iseven(L) && ni==2)
+				if sp==sXX
+					C[ni] += ζ * B[preind]
+				end
+			else
+				if sp==sXX
+					C[ni] += B[preind]
+				elseif sp==s00 || sp==sPM || sp==sMP
+					C[ni] += √ζ * B[preind]
+				end
 			end
 		end
 	end
