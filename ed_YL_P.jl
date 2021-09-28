@@ -11,21 +11,21 @@ const MyFloat = Float32
 const ZipFloat = Float16
 const MyComplex = ComplexF32
 
-const L = 6
-const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
-const nev = 10
-const Q = 0
-const dataPath = "data/"
+# const L = 6
+# const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+# const nev = 10
+# const Q = 0
+# const dataPath = "data/"
 
-# const L = parse(Int64, ARGS[1])
-# const P = parse(Int64, ARGS[2])
-# const nev = parse(Int64, ARGS[3])
-# if length(ARGS) < 4
-# 	const Q = 0
-# else
-# 	const Q = parse(Int64, ARGS[4])
-# end
-# const dataPath = "/lustre/work/yinghsuan.lin/ed/data4/" # NOTE If on cluster set to scratch space
+const L = parse(Int64, ARGS[1])
+const P = parse(Int64, ARGS[2])
+const nev = parse(Int64, ARGS[3])
+if length(ARGS) < 4
+	const Q = 0
+else
+	const Q = parse(Int64, ARGS[4])
+end
+const dataPath = "/lustre/work/yinghsuan.lin/ed/data4/" # NOTE If on cluster set to scratch space
 
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
@@ -889,6 +889,10 @@ else
 			local eigPPath
 			eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 			@load eigPPath e v
+			if length(e) > nev
+				e = e[1:nev]
+				v = v[:,1:nev]
+			end
 			append!(eAll, e)
 			global vAll = hcat(vAll, v)
 		end
@@ -907,6 +911,10 @@ else
 				local eigPPath
 				eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 				@load eigPPath e v
+				if length(e) > nev
+					e = e[1:nev]
+					v = v[:,1:nev]
+				end
 				append!(eAll, e)
 				@load dataPathL * "H_P/H_" * string(P) * ".jld2" U
 				v = U * v
@@ -917,6 +925,10 @@ else
 		else
 			eigPPath = dataPathL * "eig_P/eig_" * string(P) * ".jld2"
 			@load eigPPath e v
+			if length(e) > nev
+				e = e[1:nev]
+				v = v[:,1:nev]
+			end
 			@load dataPathL * "H_P/H_" * string(P) * ".jld2" U
 			v = U * v
 		end
@@ -1238,6 +1250,9 @@ function attach!(C,B)
 	batchsize = Int64(ceil(len / Threads.nthreads()))
 	Threads.@threads for t = 1 : Threads.nthreads()
 		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > len
+				continue
+			end
 			ind = basis[preind]
 			if B[preind] == 0
 				continue
@@ -1330,6 +1345,9 @@ function zip!(C,B,i::Int64)
 	batchsize = Int64(ceil(ziplen / Threads.nthreads()))
 	Threads.@threads for t = 1 : Threads.nthreads()
 		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > ziplen
+				continue
+			end
 			ind = inBasis[preind]
 			if B[preind] == 0
 				continue
@@ -1402,6 +1420,9 @@ function detach!(C,B)
 	batchsize = Int64(ceil(ziplen / Threads.nthreads()))
 	Threads.@threads for t = 1 : Threads.nthreads()
 		for preind = 1 + (t-1)*batchsize : t*batchsize
+			if preind > ziplen
+				continue
+			end
 			ind = inBasis[preind]
 			if B[preind] == 0
 				continue
@@ -1667,29 +1688,114 @@ function ρMatrix(v)
 		println()
 		flush(stdout)
 	else
-		println("prepare attach...")
 		@time prepare!(0)
-		ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
-		println("act attach...")
-		@time u = Matrix(ρ * v)
+
+		donePath = dataPathL * "done/done_" * string(nev) * "_" * string(0) * ".jld2"
+		if !ispath(donePath) || true
+			ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
+
+			println("act attach...")
+			flush(stdout)
+			@time for s = 1 : length(e)
+				println(s)
+				flush(stdout)
+				path = dataPathL * "rhov/rhov_0_" * string(P) * "_" * string(s) * ".jld2"
+				if !ispath(path)
+					@time rhov = ρ * v[:,s]
+					@save path rhov
+					flush(stdout)
+				end
+			end
+		end
+		# @save donePath donePath
 		println()
 		flush(stdout)
+
 		for i = 1 : L
-			println("prepare zip ", i, "...")
 			@time prepare!(i)
-			ρ = LinearMap((C,B)->zip!(C,B,i),ziplen,ziplen,ismutating=true,issymmetric=false,isposdef=false)
-			println("act zip ", i, "...")
-			@time u = Matrix(ρ * u)
+			donePath = dataPathL * "done/done_" * string(nev) * "_" * string(i) * ".jld2"
+			if !ispath(donePath) || true
+				ρ = LinearMap((C,B)->zip!(C,B,i),ziplen,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+
+				println("act zip ", i, "...")
+				flush(stdout)
+				@time for s = 1 : length(e)
+					println(s)
+					flush(stdout)
+					oldPath = dataPathL * "rhov/rhov_" * string(i-1) * "_" * string(P) * "_" * string(s) * ".jld2"
+					path = dataPathL * "rhov/rhov_" * string(i) * "_" * string(P) * "_" * string(s) * ".jld2"
+					if !ispath(path)
+						@load oldPath rhov
+						@time rhov = ρ * rhov
+						@save path rhov
+						flush(stdout)
+					end
+				end
+			end
+			# @save donePath donePath
 			println()
 			flush(stdout)
 		end
-		println("prepare detach...")
+
 		@time prepare!(L+1)
-		ρ = LinearMap((C,B)->detach!(C,B),len,ziplen,ismutating=true,issymmetric=false,isposdef=false)
-		println("act detach...")
-		@time u = Matrix(ρ * u)
+
+		donePath = dataPathL * "done/done_" * string(nev) * "_" * string(L+1) * ".jld2"
+		if !ispath(donePath) || true
+			ρ = LinearMap((C,B)->detach!(C,B),len,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+
+			println("act detach...")
+			flush(stdout)
+			@time for s = 1 : length(e)
+				println(s)
+				flush(stdout)
+				oldPath = dataPathL * "rhov/rhov_" * string(L) * "_" * string(P) * "_" * string(s) * ".jld2"
+				path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(P) * "_" * string(s) * ".jld2"
+				if !ispath(path)
+					@load oldPath rhov
+					@time rhov = ρ * rhov
+					@save path rhov
+					flush(stdout)
+				end
+			end
+		end
+		# @save donePath donePath
+
+		u = Matrix{ComplexF16}(undef, len, length(e))
+		for s = 1 : length(e)
+			path = dataPathL * "rhov/rhov_" * string(L+1) * "_" * string(P) * "_" * string(s) * ".jld2"
+			@time @load path rhov
+			u[:,s] = rhov
+		end
 		println()
 		flush(stdout)
+	# else
+	# 	println("prepare attach...")
+	# 	@time prepare!(0)
+	# 	ρ = LinearMap((C,B)->attach!(C,B),ziplen,len,ismutating=true,issymmetric=false,isposdef=false)
+	# 	println("act attach...")
+
+	# 	println(size(v))
+	# 	println(Sys.total_memory()/2^20)
+	# 	println(Sys.free_memory()/2^20)
+	# 	@time u = Matrix(ρ * v)
+	# 	println()
+	# 	flush(stdout)
+	# 	for i = 1 : L
+	# 		println("prepare zip ", i, "...")
+	# 		@time prepare!(i)
+	# 		ρ = LinearMap((C,B)->zip!(C,B,i),ziplen,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+	# 		println("act zip ", i, "...")
+	# 		@time u = Matrix(ρ * u)
+	# 		println()
+	# 		flush(stdout)
+	# 	end
+	# 	println("prepare detach...")
+	# 	@time prepare!(L+1)
+	# 	ρ = LinearMap((C,B)->detach!(C,B),len,ziplen,ismutating=true,issymmetric=false,isposdef=false)
+	# 	println("act detach...")
+	# 	@time u = Matrix(ρ * u)
+	# 	println()
+	# 	flush(stdout)
 	end
 
 	return adjoint(v) * u
