@@ -11,32 +11,35 @@ const MyFloat = Float32
 const ZipFloat = Float16
 const MyComplex = ComplexF64
 
-# const L = 6
-# const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
-# const nev = 10
-# const Q = 0
-# const dataPath = "data/"
+const L = 6
+const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+const nev = 10
+const Q = 0
+const dataPath = "data/"
+const c1 = 1
+const c2 = 0
+const c3 = 0
 
-const L = parse(Int64, ARGS[1])
-const P = parse(Int64, ARGS[2])
-const nev = parse(Int64, ARGS[3])
-if length(ARGS) < 4
-	const Q = 0
-else
-	const Q = parse(Int64, ARGS[4])
-end
+# const L = parse(Int64, ARGS[1])
+# const P = parse(Int64, ARGS[2])
+# const nev = parse(Int64, ARGS[3])
+# if length(ARGS) < 4
+# 	const Q = 0
+# else
+# 	const Q = parse(Int64, ARGS[4])
+# end
 
-# H = c1 P(rho) + c2 P(a rho) + c3 P(a^2 rho)
-const c1 = parse(Float64, ARGS[5])
-const c2 = parse(Float64, ARGS[6])
-const c3 = parse(Float64, ARGS[7])
-const dataPath = "./data/" # NOTE If on cluster set to scratch space
+# # H = c1 P(rho) + c2 P(a rho) + c3 P(a^2 rho)
+# const c1 = parse(Float64, ARGS[5])
+# const c2 = parse(Float64, ARGS[6])
+# const c3 = parse(Float64, ARGS[7])
+# const dataPath = "./data/" # NOTE If on cluster set to scratch space
 
 # const dataPath = "/n/holyscratch01/yin_lab/Users/yhlin/ed/" # NOTE If on cluster set to scratch space
 
 const eigSolver = "Arpack" # "Arpack" "ArnoldiMethod" "KrylovKit"
-const onlyT = false # compute eigenstates of H and measure T but not ρ
-const buildSparse = false # use sparse matrices and not LinearMap
+const onlyT = true # compute eigenstates of H and measure T but not ρ
+const buildSparse = true # use sparse matrices and not LinearMap
 
 
 #=
