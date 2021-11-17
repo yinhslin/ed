@@ -12,13 +12,15 @@ const ZipFloat = Float16
 const MyComplex = ComplexF64
 
 const L = 6
-const P = 0 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
+const P = 6 # "prepare" mode if P==-1, "eigen" mode if P==0, ..., L-1, and P==L computes eigens for all these Ps.
 const nev = 10
 const Q = 0
 const dataPath = "data/"
-const c1 = 1
-const c2 = 0
-const c3 = 0
+c1 = 0
+c2 = -1
+c2global = c2
+c2local = c2
+c3 = 0
 
 # const L = parse(Int64, ARGS[1])
 # const P = parse(Int64, ARGS[2])
@@ -460,11 +462,16 @@ function computeDiag!(diag::Vector{MyFloat},flag::Vector{MyInt},preind::Int64)
 	state=stateFromInd(ind)
 	diag[preind]=0
 	for i = 1 : L
+		if i==1
+			global c2 = c2local
+		else
+			global c2 = c2global
+		end
 		sp=localStatePair(state,i)
 		if sp==sX0
-			diag[preind] -= 1
+			diag[preind] -= c1
 		elseif sp==s0X
-			diag[preind] -= 1
+			diag[preind] -= c1
 		elseif sp==sXX && isρ1ρ(flag,preind,i)
 			diag[preind] -= (c1+c2+c3) * (1/ζ)
 		elseif sp==sPM
@@ -577,6 +584,11 @@ function buildH(diag,flag)
 		miniRow = [preind]
 		miniVal = [diag[preind]]
 		for i = 1 : L
+			if i==1
+				global c2 = c2local
+			else
+				global c2 = c2global
+			end
 			sp=localStatePair(state,i)
 			if sp==sXX  && isρ1ρ(flag,preind,i)
 				append!(miniRow,map(s->newPreind(state,i,s),[sPM,sMP,s00]))
